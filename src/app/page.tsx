@@ -2,19 +2,40 @@ import { createClient } from "@/lib/supabase/server";
 import { UploadForm } from "./upload-form";
 
 export default async function HomePage() {
-  const supabase = await createClient();
+  let formats = [];
+  let photographer = null;
+  let error = null;
 
-  const { data: formats } = await supabase
-    .from("print_formats")
-    .select("*")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  try {
+    const supabase = await createClient();
 
-  const { data: photographer } = await supabase
-    .from("photographers")
-    .select("*")
-    .limit(1)
-    .single();
+    const { data: formatsData, error: formatsError } = await supabase
+      .from("print_formats")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+
+    if (formatsError) {
+      console.error("Formats error:", formatsError);
+    } else {
+      formats = formatsData || [];
+    }
+
+    const { data: photographerData, error: photographerError } = await supabase
+      .from("photographers")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+
+    if (photographerError) {
+      console.error("Photographer error:", photographerError);
+    } else {
+      photographer = photographerData;
+    }
+  } catch (e) {
+    console.error("Supabase connection error:", e);
+    error = "Errore di connessione al database";
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
@@ -36,7 +57,16 @@ export default async function HomePage() {
 
       {/* Upload Section */}
       <section className="max-w-4xl mx-auto px-4 py-12">
-        <UploadForm formats={formats || []} photographerId={photographer?.id} />
+        {error ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <p className="text-red-600">{error}</p>
+            <p className="text-sm text-gray-500 mt-2">
+              Verifica che il database Supabase sia configurato correttamente.
+            </p>
+          </div>
+        ) : (
+          <UploadForm formats={formats} photographerId={photographer?.id} />
+        )}
       </section>
 
       {/* Footer */}
