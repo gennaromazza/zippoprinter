@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutAmounts, getPhotographerPaymentMode, requiresOnlinePayment } from "@/lib/payments";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getStripeClient } from "@/lib/stripe";
+import { normalizeFilename } from "@/lib/uploads";
 import type { Photographer, PrintFormat } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -13,14 +14,7 @@ interface ManifestItem {
   formatId: string;
   quantity: number;
   originalFilename: string;
-}
-
-function normalizeFilename(filename: string) {
-  return filename
-    .normalize("NFKD")
-    .replace(/[^\w.\-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+  storagePath?: string;
 }
 
 function getRequestOrigin(request: Request) {
@@ -44,12 +38,37 @@ export async function POST(request: Request) {
   const uploadedStoragePaths: string[] = [];
 
   try {
-    const formData = await request.formData();
-    const photographerId = String(formData.get("photographerId") || "");
-    const customerEmail = String(formData.get("customerEmail") || "").trim();
-    const customerName = String(formData.get("customerName") || "").trim();
-    const customerPhone = String(formData.get("customerPhone") || "").trim();
-    const manifestInput = String(formData.get("manifest") || "[]");
+    const contentType = request.headers.get("content-type") || "";
+    const isMultipart = contentType.includes("multipart/form-data");
+    let photographerId = "";
+    let customerEmail = "";
+    let customerName = "";
+    let customerPhone = "";
+    let manifestInput = "[]";
+    let formData: FormData | null = null;
+
+    if (isMultipart) {
+      formData = await request.formData();
+      photographerId = String(formData.get("photographerId") || "");
+      customerEmail = String(formData.get("customerEmail") || "").trim();
+      customerName = String(formData.get("customerName") || "").trim();
+      customerPhone = String(formData.get("customerPhone") || "").trim();
+      manifestInput = String(formData.get("manifest") || "[]");
+    } else {
+      const body = (await request.json()) as {
+        photographerId?: string;
+        customerEmail?: string;
+        customerName?: string;
+        customerPhone?: string;
+        manifest?: ManifestItem[];
+      };
+
+      photographerId = String(body.photographerId || "");
+      customerEmail = String(body.customerEmail || "").trim();
+      customerName = String(body.customerName || "").trim();
+      customerPhone = String(body.customerPhone || "").trim();
+      manifestInput = JSON.stringify(body.manifest || []);
+    }
 
     let manifest: ManifestItem[] = [];
 
@@ -150,25 +169,33 @@ export async function POST(request: Request) {
     }> = [];
 
     for (const item of lineItems) {
-      const fileEntry = formData.get(`file:${item.clientId}`);
+      let storagePath = item.storagePath || "";
 
-      if (!(fileEntry instanceof File)) {
-        throw new Error("Una o piu immagini non sono state ricevute correttamente.");
+      if (isMultipart) {
+        const fileEntry = formData?.get(`file:${item.clientId}`);
+
+        if (!(fileEntry instanceof File)) {
+          throw new Error("Una o piu immagini non sono state ricevute correttamente.");
+        }
+
+        const extension = fileEntry.name.split(".").pop() || "jpg";
+        const safeBase = normalizeFilename(fileEntry.name.replace(/\.[^.]+$/, "")) || item.clientId;
+        const fileName = `${Date.now()}-${item.clientId}-${safeBase}.${extension}`;
+        storagePath = `${photographerId}/${createdOrder.id}/${fileName}`;
+        const fileBuffer = Buffer.from(await fileEntry.arrayBuffer());
+
+        const { error: uploadError } = await admin.storage.from("photos").upload(storagePath, fileBuffer, {
+          contentType: fileEntry.type || "application/octet-stream",
+          upsert: false,
+        });
+
+        if (uploadError) {
+          throw new Error("Caricamento immagini non riuscito.");
+        }
       }
 
-      const extension = fileEntry.name.split(".").pop() || "jpg";
-      const safeBase = normalizeFilename(fileEntry.name.replace(/\.[^.]+$/, "")) || item.clientId;
-      const fileName = `${Date.now()}-${item.clientId}-${safeBase}.${extension}`;
-      const storagePath = `${photographerId}/${createdOrder.id}/${fileName}`;
-      const fileBuffer = Buffer.from(await fileEntry.arrayBuffer());
-
-      const { error: uploadError } = await admin.storage.from("photos").upload(storagePath, fileBuffer, {
-        contentType: fileEntry.type || "application/octet-stream",
-        upsert: false,
-      });
-
-      if (uploadError) {
-        throw new Error("Caricamento immagini non riuscito.");
+      if (!storagePath) {
+        throw new Error("Una o piu immagini non sono state caricate correttamente.");
       }
 
       uploadedStoragePaths.push(storagePath);

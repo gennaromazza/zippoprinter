@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/orders";
 import { getCheckoutAmounts, getPaymentModeLabel } from "@/lib/payments";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import type { Photographer, PrintFormat } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,22 @@ interface PhotoSelection {
   preview: string;
   formatId: string;
   quantity: number;
+}
+
+interface SignedUploadPayload {
+  uploads?: Array<{
+    clientId: string;
+    storagePath: string;
+    token: string;
+  }>;
+  error?: string;
+}
+
+interface OrderPayload {
+  error?: string;
+  orderId?: string;
+  paymentRequired?: boolean;
+  checkoutUrl?: string;
 }
 
 interface UploadFormProps {
@@ -61,7 +78,26 @@ function computeTotal(photos: PhotoSelection[], formats: PrintFormat[]) {
   }, 0);
 }
 
+async function parseApiPayload<T>(response: Response): Promise<T> {
+  const rawText = await response.text();
+
+  if (!rawText) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(rawText) as T;
+  } catch {
+    throw new Error(
+      rawText.startsWith("Request Entity Too Large")
+        ? "Le immagini sono troppo pesanti per essere inviate in questo formato. Riprova con meno foto oppure immagini piu leggere."
+        : rawText
+    );
+  }
+}
+
 export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormProps) {
+  const supabase = createSupabaseClient();
   const [photos, setPhotos] = useState<PhotoSelection[]>([]);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [bulkFormatId, setBulkFormatId] = useState("");
@@ -149,26 +185,63 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     setErrorMessage("");
 
     try {
-      const formData = new FormData();
-      formData.set("photographerId", photographer.id);
-      formData.set("customerEmail", customerEmail.trim());
-      formData.set("customerName", customerName.trim());
-      formData.set("customerPhone", customerPhone.trim());
-      formData.set(
-        "manifest",
-        JSON.stringify(
-          photos.map((photo) => ({
+      const uploadResponse = await fetch("/api/public/uploads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          photographerId: photographer.id,
+          files: photos.map((photo) => ({
+            clientId: photo.id,
+            originalFilename: photo.file.name,
+          })),
+        }),
+      });
+
+      const uploadPayload = await parseApiPayload<SignedUploadPayload>(uploadResponse);
+
+      if (!uploadResponse.ok || !uploadPayload.uploads?.length) {
+        throw new Error(uploadPayload.error || "Preparazione upload non riuscita.");
+      }
+
+      const uploadMap = new Map(uploadPayload.uploads.map((upload) => [upload.clientId, upload]));
+
+      for (const photo of photos) {
+        const target = uploadMap.get(photo.id);
+
+        if (!target) {
+          throw new Error("Una o piu immagini non hanno ricevuto un URL di upload valido.");
+        }
+
+        const { error: uploadError } = await supabase.storage
+          .from("photos")
+          .uploadToSignedUrl(target.storagePath, target.token, photo.file, {
+            contentType: photo.file.type || "application/octet-stream",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error("Caricamento immagini non riuscito. Riprova tra un attimo.");
+        }
+      }
+
+      const response = await fetch("/api/public/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          photographerId: photographer.id,
+          customerEmail: customerEmail.trim(),
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          manifest: photos.map((photo) => ({
             clientId: photo.id,
             formatId: photo.formatId,
             quantity: photo.quantity,
             originalFilename: photo.file.name,
-          }))
-        )
-      );
-      photos.forEach((photo) => formData.set(`file:${photo.id}`, photo.file, photo.file.name));
-
-      const response = await fetch("/api/public/orders", { method: "POST", body: formData });
-      const payload = (await response.json()) as { error?: string; orderId?: string; paymentRequired?: boolean; checkoutUrl?: string };
+            storagePath: uploadMap.get(photo.id)?.storagePath,
+          })),
+        }),
+      });
+      const payload = await parseApiPayload<OrderPayload>(response);
 
       if (!response.ok) throw new Error(payload.error || "Preparazione ordine non riuscita.");
       if (payload.paymentRequired && payload.checkoutUrl) {

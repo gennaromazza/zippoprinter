@@ -65,9 +65,56 @@ Assicurati di avere:
 - bucket storage `photos` creato;
 - policy storage configurate.
 
+## Deploy production
+
+Produzione attuale:
+
+- GitHub: `https://github.com/gennaromazza/zippoprinter`
+- Vercel project: `studiofotograficozippo-5593s-projects / zippoprinter`
+- Dominio: `https://studiofotograficozippoprinter.com`
+- Alias: `https://zippoprinter.vercel.app`
+
+Impostazioni Vercel corrette:
+
+- `Framework Preset`: `Next.js`
+- `Root Directory`: `.`
+- `Output Directory`: vuoto
+- `Deployment Protection`: disattivata per il sito pubblico
+
+Variabili ambiente richieste:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `JWT_SECRET`
+- `NEXT_PUBLIC_SITE_URL`
+- `INIT_SECRET`
+- `STRIPE_SECRET_KEY` se si usa checkout online
+
+Procedura rapida:
+
+```bash
+cd D:/ZippoProject/zippoprinter
+git push origin main
+npm run lint
+npm run build
+vercel deploy --prod --yes
+```
+
+Nota importante:
+
+- eseguire i comandi dalla cartella `D:/ZippoProject/zippoprinter`
+- non usare la cartella parent `D:/ZippoProject`, altrimenti Vercel puo deployare un root errato e restituire `404`
+
+Migrazioni Supabase da avere allineate:
+
+- `supabase/migrations/001_initial_schema.sql`
+- `supabase/migrations/002_multitenant_hardening.sql`
+- `supabase/migrations/003_payment_modes_and_checkout.sql`
+
 ## Limiti attuali
 
-- `README` e setup operativo ancora essenziali, non ancora completi per deployment.
+- Il runbook di deploy base e presente, ma restano da consolidare i passaggi Stripe e le procedure operative complete.
 - Pagina `setup` piu tecnica che di prodotto.
 - Mancano asset visuali dedicati come logo e immagini branding.
 - Il progetto ha ancora warning/errori lint fuori dal perimetro stretto del redesign UI.
