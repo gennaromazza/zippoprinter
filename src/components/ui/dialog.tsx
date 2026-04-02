@@ -15,11 +15,11 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
   return (
     <div className="fixed inset-0 z-50">
       <div 
-        className="fixed inset-0 bg-black/50"
+        className="fixed inset-0 bg-[#1c1712]/55 backdrop-blur-sm"
         onClick={() => onOpenChange?.(false)}
       />
       <div className="fixed inset-0 overflow-y-auto">
-        <div className="flex min-h-full items-center justify-center p-4">
+        <div className="flex min-h-full items-center justify-center p-4 md:p-8">
           {children}
         </div>
       </div>
@@ -32,7 +32,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     <div
       ref={ref}
       className={clsx(
-        "relative w-full max-w-lg rounded-lg bg-white p-6 shadow-lg",
+        "relative w-full max-w-lg rounded-[2rem] border border-white/40 bg-[color:var(--surface-strong)] p-6 shadow-[var(--shadow-md)] md:p-8",
         className
       )}
       onClick={(e) => e.stopPropagation()}

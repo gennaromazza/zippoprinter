@@ -1,36 +1,184 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --primary: #2563eb;
+  --background: #faf8f5;
+  --foreground: #3d2f28;
+  --muted: #e8dfd6;
+  --muted-foreground: #8b7d72;
+  --primary: #d97942;
   --primary-foreground: #ffffff;
-  --card: #ffffff;
-  --card-foreground: #171717;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #2563eb;
-  --radius: 0.5rem;
+  --primary-soft: #f0c3a5;
+  --accent: #f4e4d7;
+  --accent-foreground: #3d2f28;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-strong: #ffffff;
+  --card: rgba(255, 255, 255, 0.96);
+  --card-foreground: #1e1c19;
+  --border: rgba(61, 47, 40, 0.12);
+  --border-strong: rgba(61, 47, 40, 0.22);
+  --input: #f8f3ee;
+  --ring: rgba(217, 121, 66, 0.3);
+  --danger: #b8422d;
+  --danger-foreground: #fff7f4;
+  --success: #2f7a48;
+  --success-foreground: #f3fff6;
+  --warning: #b98021;
+  --warning-foreground: #fff9ef;
+  --info: #2f5b96;
+  --info-foreground: #f4f8ff;
+  --shadow-sm: 0 18px 40px rgba(61, 47, 40, 0.08);
+  --shadow-md: 0 24px 64px rgba(61, 47, 40, 0.14);
+  --radius: 1rem;
 }
 
 @theme inline {
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-geist-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(240, 196, 160, 0.38), transparent 34%),
+    radial-gradient(circle at top right, rgba(244, 228, 215, 0.82), transparent 30%),
+    linear-gradient(180deg, #fbf9f6 0%, #f7f1eb 46%, #f4eee7 100%);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-manrope), sans-serif;
+}
+
+::selection {
+  background: rgba(143, 93, 44, 0.18);
+  color: var(--foreground);
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(71, 54, 34, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 54, 34, 0.03) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.44), transparent 86%);
+}
+
+.glass-panel {
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(217, 121, 66, 0.16);
+  background: rgba(217, 121, 66, 0.08);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.field-shell {
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background: rgba(248, 243, 238, 0.86);
+  padding: 0.95rem 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.field-shell:focus-within {
+  border-color: rgba(217, 121, 66, 0.42);
+  box-shadow:
+    0 0 0 4px rgba(217, 121, 66, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.texture-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.texture-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3), transparent 45%),
+    radial-gradient(circle at top left, rgba(217, 180, 141, 0.18), transparent 34%);
+}
+
+.status-dot {
+  display: inline-block;
+  height: 0.5rem;
+  width: 0.5rem;
+  border-radius: 9999px;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@media (max-width: 768px) {
+  body {
+    background:
+      radial-gradient(circle at top, rgba(217, 180, 141, 0.32), transparent 34%),
+      linear-gradient(180deg, #f8f4ed 0%, #efe7dc 100%);
+  }
+
+  .app-shell::before {
+    background-size: 28px 28px;
+  }
 }

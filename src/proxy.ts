@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request: {
       headers: request.headers,
@@ -36,12 +36,10 @@ export async function middleware(request: NextRequest) {
   const isAdminRoute = request.nextUrl.pathname.startsWith("/admin");
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
 
-  // Se non c'è utente e cerco di accedere ad admin, reindirizza al login
   if (isAdminRoute && !user && !isLoginRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Se c'è utente e cerco di accedere al login, reindirizza all'admin
   if (isLoginRoute && user) {
     return NextResponse.redirect(new URL("/admin", request.url));
   }

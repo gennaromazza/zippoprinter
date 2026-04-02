@@ -4,20 +4,37 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 
-export async function markOrderReady(orderId: string) {
+function revalidateOrderViews(orderId: string) {
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+}
+
+export async function recordOrderPayment(orderId: string) {
   const supabase = await createClient();
-  
+  const { data: order } = await supabase
+    .from("orders")
+    .select("total_cents")
+    .eq("id", orderId)
+    .single();
+
+  if (!order) {
+    return;
+  }
+
   const { error } = await supabase
     .from("orders")
-    .update({ 
-      status: "ready",
-      ready_at: new Date().toISOString()
+    .update({
+      status: "paid",
+      payment_status: "paid",
+      amount_paid_cents: order.total_cents,
+      amount_due_cents: 0,
+      paid_at: new Date().toISOString(),
     })
     .eq("id", orderId);
 
   if (!error) {
-    revalidatePath("/admin");
-    revalidatePath(`/admin/orders/${orderId}`);
+    revalidateOrderViews(orderId);
   }
 }
 
@@ -37,7 +54,7 @@ export async function deleteOrderPhotos(orderId: string, storagePaths: string[])
   }
 
   // Delete order items from database
-  const { error: itemsError } = await supabase
+  await supabase
     .from("order_items")
     .delete()
     .eq("order_id", orderId);
@@ -45,17 +62,20 @@ export async function deleteOrderPhotos(orderId: string, storagePaths: string[])
   // Update order status
   await supabase
     .from("orders")
-    .update({ status: "completed" })
+    .update({ status: "completed", completed_at: new Date().toISOString() })
     .eq("id", orderId);
 
-  revalidatePath("/admin");
-  revalidatePath(`/admin/orders/${orderId}`);
+  revalidateOrderViews(orderId);
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {
   const supabase = await createClient();
-  
-  const updates: any = { status };
+  const updates: {
+    status: string;
+    paid_at?: string;
+    ready_at?: string;
+    completed_at?: string;
+  } = { status };
   if (status === "printing") {
     updates.paid_at = new Date().toISOString();
   }
@@ -71,6 +91,5 @@ export async function updateOrderStatus(orderId: string, status: string) {
     .update(updates)
     .eq("id", orderId);
 
-  revalidatePath("/admin");
-  revalidatePath(`/admin/orders/${orderId}`);
+  revalidateOrderViews(orderId);
 }

@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ZippoPrinter
 
-## Getting Started
+ZippoPrinter e una web app per studi fotografici che raccoglie ordini di stampa online e li organizza in un pannello amministrativo semplice da usare.
 
-First, run the development server:
+## Cosa fa
+
+- Front-end cliente white-label con nome studio, colore brand e messaggio di benvenuto.
+- Upload multiplo di foto con scelta formato e quantita per ogni immagine.
+- Creazione ordine su Supabase con salvataggio file nel bucket `photos`.
+- Backoffice admin per dashboard, lista ordini, dettaglio ordine e gestione formati.
+- Pagina `setup` tecnica per verificare configurazione database, auth e storage.
+
+## Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- Supabase Auth, Database e Storage
+
+## Pagine principali
+
+- `/`
+  front-end cliente per inviare ordini di stampa.
+- `/login`
+  accesso amministratore.
+- `/admin`
+  dashboard studio con metriche e ultimi ordini.
+- `/admin/orders`
+  elenco completo ordini.
+- `/admin/orders/[id]`
+  dettaglio ordine con foto, cliente e azioni rapide.
+- `/admin/settings`
+  branding studio e gestione formati di stampa.
+- `/setup`
+  utilita di setup e diagnostica ambiente.
+
+## UI v1
+
+Il redesign di questa versione introduce:
+
+- tema condiviso cliente + admin con look editoriale chiaro e premium;
+- base visuale white-label per valorizzare lo studio invece del prodotto;
+- componenti coerenti per card, input, pulsanti, badge stato e dialog;
+- funnel cliente piu leggibile con riepilogo ordine dedicato;
+- backoffice piu ordinato per uso quotidiano da desktop e mobile.
+
+## Avvio locale
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apri `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configurazione
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+La configurazione database iniziale e documentata in [SETUP_GUIDE.md](/D:/ZippoProject/zippoprinter/SETUP_GUIDE.md).
 
-## Learn More
+Assicurati di avere:
 
-To learn more about Next.js, take a look at the following resources:
+- variabili Supabase in `.env.local`;
+- migrazione `supabase/migrations/001_initial_schema.sql` eseguita;
+- bucket storage `photos` creato;
+- policy storage configurate.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Limiti attuali
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `README` e setup operativo ancora essenziali, non ancora completi per deployment.
+- Pagina `setup` piu tecnica che di prodotto.
+- Mancano asset visuali dedicati come logo e immagini branding.
+- Il progetto ha ancora warning/errori lint fuori dal perimetro stretto del redesign UI.
+- Non sono presenti test automatici UI o end-to-end.
