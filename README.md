@@ -90,8 +90,6 @@ Variabili ambiente richieste:
 - `NEXT_PUBLIC_SITE_URL`
 - `INIT_SECRET`
 - `STRIPE_SECRET_KEY` se si usa checkout online
-- `EXPORT_SECRET_KEY` (32 byte, usata per cifrare i segreti SFTP)
-- `CRON_SECRET` oppure `EXPORT_WORKER_SECRET` (autorizza il worker export)
 
 Procedura rapida:
 
@@ -116,15 +114,15 @@ Migrazioni Supabase da avere allineate:
 - `supabase/migrations/004_customer_profiles_and_order_names.sql`
 - `supabase/migrations/005_order_exports_and_sftp_settings.sql`
 - `supabase/migrations/006_public_studio_profile_links.sql`
+- `supabase/migrations/007_logo_positioning_controls.sql`
+- `supabase/migrations/008_print_format_quantity_pricing_and_csv.sql`
 
-## Export ordini massivi
+## Export ordini
 
-Flusso operativo v1:
+Flusso operativo:
 
-- Configura SFTP tenant-specifico in `/admin/settings` nella sezione `Export consegna file`.
-- Dal dettaglio ordine `/admin/orders/[id]` usa `Esporta ordine (SFTP)` per accodare il job asincrono.
-- Il worker gira tramite cron Vercel (`vercel.json`) su `/api/admin/exports/worker`.
-- Fallback open-source: genera `manifest.csv`, `links.txt`, `aria2.txt` e importali in client come aria2 o JDownloader.
+- Dal dettaglio ordine `/admin/orders/[id]` usa `Scarica ordine ZIP`.
+- L'archivio viene preparato per formato e quantita copie in un unico file.
 
 ## Limiti attuali
 
