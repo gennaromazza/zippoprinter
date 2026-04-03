@@ -1,15 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/orders";
+import { formatTierInput, formatTierSummary, parseTierInput } from "@/lib/pricing";
+import { isMissingQuantityPricingSchemaError } from "@/lib/schema-compat";
 import type { PrintFormat } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+
+function parseCsvLine(line: string, delimiter: "," | ";") {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function detectCsvDelimiter(headerLine: string): "," | ";" {
+  const commaCount = (headerLine.match(/,/g) || []).length;
+  const semicolonCount = (headerLine.match(/;/g) || []).length;
+  return semicolonCount > commaCount ? ";" : ",";
+}
+
+function downloadCsvTemplate() {
+  const csv = [
+    "name,width_cm,height_cm,price_eur,tier_prices",
+    '"10x15 cm",10,15,3.00,"10:2.70;20:2.50"',
+    '"13x18 cm",13,18,5.00,"10:4.60;25:4.20"',
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "template_formati.csv";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function splitInChunks<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 export function PrintFormatsManager({
   formats,
@@ -21,6 +88,10 @@ export function PrintFormatsManager({
   const [editing, setEditing] = useState<PrintFormat | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [csvMessage, setCsvMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -32,35 +103,60 @@ export function PrintFormatsManager({
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
+    setMessage("");
 
-    const formData = new FormData(event.currentTarget);
-    const priceEuros = Number.parseFloat(formData.get("price") as string);
-    const priceCents = Math.round(priceEuros * 100);
+    try {
+      const formData = new FormData(event.currentTarget);
+      const priceEuros = Number.parseFloat(String(formData.get("price") || "").replace(",", "."));
+      const widthCm = Number.parseFloat(String(formData.get("width") || "").replace(",", "."));
+      const heightCm = Number.parseFloat(String(formData.get("height") || "").replace(",", "."));
+      const tiers = parseTierInput(String(formData.get("tier_prices") || ""));
 
-    if (editing) {
-      await supabase
-        .from("print_formats")
-        .update({
-          name: formData.get("name"),
-          width_cm: Number.parseFloat(formData.get("width") as string),
-          height_cm: Number.parseFloat(formData.get("height") as string),
-          price_cents: priceCents,
-        })
-        .eq("id", editing.id);
-    } else {
-      await supabase.from("print_formats").insert({
-        photographer_id: photographerId,
-        name: formData.get("name"),
-        width_cm: Number.parseFloat(formData.get("width") as string),
-        height_cm: Number.parseFloat(formData.get("height") as string),
-        price_cents: priceCents,
-        sort_order: formats.length,
-      });
+      if (!Number.isFinite(priceEuros) || priceEuros <= 0) {
+        throw new Error("Prezzo non valido.");
+      }
+
+      if (!Number.isFinite(widthCm) || widthCm <= 0 || !Number.isFinite(heightCm) || heightCm <= 0) {
+        throw new Error("Larghezza/altezza non valide.");
+      }
+
+      const payload = {
+        name: String(formData.get("name") || "").trim(),
+        width_cm: widthCm,
+        height_cm: heightCm,
+        price_cents: Math.round(priceEuros * 100),
+        quantity_price_tiers: tiers,
+      };
+
+      if (!payload.name) {
+        throw new Error("Nome formato obbligatorio.");
+      }
+
+      const response = editing
+        ? await supabase.from("print_formats").update(payload).eq("id", editing.id)
+        : await supabase.from("print_formats").insert({
+            photographer_id: photographerId,
+            ...payload,
+            sort_order: formats.length,
+          });
+
+      if (response.error) {
+        if (isMissingQuantityPricingSchemaError(response.error.message)) {
+          throw new Error(
+            "Schema non aggiornato. Esegui la migration 008_print_format_quantity_pricing_and_csv.sql."
+          );
+        }
+        throw new Error(response.error.message);
+      }
+
+      setMessage(editing ? "Formato aggiornato." : "Formato creato.");
+      resetForm();
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? `Errore: ${error.message}` : "Errore salvataggio formato.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-    resetForm();
-    router.refresh();
   };
 
   const handleDelete = async (id: string) => {
@@ -75,6 +171,129 @@ export function PrintFormatsManager({
     router.refresh();
   };
 
+  const handleImportCsv = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setCsvLoading(true);
+    setCsvMessage("");
+
+    try {
+      const text = await file.text();
+      const lines = text
+        .split(/\r?\n/g)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2) {
+        throw new Error("CSV vuoto o senza righe dati.");
+      }
+
+      const delimiter = detectCsvDelimiter(lines[0]);
+      const header = parseCsvLine(lines[0], delimiter).map((cell) =>
+        cell.toLowerCase().replace(/\s+/g, "_")
+      );
+      const getIndex = (...aliases: string[]) =>
+        header.findIndex((column) => aliases.includes(column));
+
+      const nameIndex = getIndex("name", "nome");
+      const widthIndex = getIndex("width_cm", "width", "larghezza");
+      const heightIndex = getIndex("height_cm", "height", "altezza");
+      const priceIndex = getIndex("price_eur", "price", "unit_price_eur", "prezzo");
+      const tiersIndex = getIndex("tier_prices", "quantity_tiers", "prezzi_quantita");
+
+      if (nameIndex < 0 || widthIndex < 0 || heightIndex < 0 || priceIndex < 0) {
+        throw new Error(
+          "CSV non valido. Colonne obbligatorie: name,width_cm,height_cm,price_eur."
+        );
+      }
+
+      const rowErrors: string[] = [];
+      const importPayload: Array<{
+        photographer_id: string;
+        name: string;
+        width_cm: number;
+        height_cm: number;
+        price_cents: number;
+        quantity_price_tiers: ReturnType<typeof parseTierInput>;
+        sort_order: number;
+      }> = [];
+
+      for (let lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
+        const row = parseCsvLine(lines[lineIndex], delimiter);
+        const lineNumber = lineIndex + 1;
+        const name = (row[nameIndex] || "").trim();
+        const widthCm = Number.parseFloat((row[widthIndex] || "").replace(",", "."));
+        const heightCm = Number.parseFloat((row[heightIndex] || "").replace(",", "."));
+        const priceEur = Number.parseFloat((row[priceIndex] || "").replace(",", "."));
+        const tiersRaw = tiersIndex >= 0 ? row[tiersIndex] || "" : "";
+
+        if (!name || !Number.isFinite(widthCm) || !Number.isFinite(heightCm) || !Number.isFinite(priceEur)) {
+          rowErrors.push(`Riga ${lineNumber}: dati base non validi.`);
+          continue;
+        }
+
+        let tiers = [] as ReturnType<typeof parseTierInput>;
+        try {
+          tiers = parseTierInput(tiersRaw);
+        } catch (error) {
+          rowErrors.push(
+            `Riga ${lineNumber}: ${
+              error instanceof Error ? error.message : "sconti quantita non validi"
+            }`
+          );
+          continue;
+        }
+
+        importPayload.push({
+          photographer_id: photographerId,
+          name,
+          width_cm: widthCm,
+          height_cm: heightCm,
+          price_cents: Math.round(priceEur * 100),
+          quantity_price_tiers: tiers,
+          sort_order: formats.length + importPayload.length,
+        });
+      }
+
+      if (rowErrors.length > 0) {
+        const preview = rowErrors.slice(0, 5).join("\n");
+        const extraCount = rowErrors.length - Math.min(rowErrors.length, 5);
+        throw new Error(
+          `${preview}${extraCount > 0 ? `\n... e altri ${extraCount} errori.` : ""}`
+        );
+      }
+
+      if (!importPayload.length) {
+        throw new Error("Nessuna riga valida da importare.");
+      }
+
+      const chunks = splitInChunks(importPayload, 100);
+      for (const chunk of chunks) {
+        const { error } = await supabase.from("print_formats").insert(chunk);
+        if (error) {
+          if (isMissingQuantityPricingSchemaError(error.message)) {
+            throw new Error(
+              "Schema non aggiornato. Esegui la migration 008_print_format_quantity_pricing_and_csv.sql."
+            );
+          }
+          throw new Error(error.message);
+        }
+      }
+
+      setCsvMessage(`Import CSV completato: ${importPayload.length} formati caricati.`);
+      router.refresh();
+    } catch (error) {
+      setCsvMessage(error instanceof Error ? `Errore import CSV: ${error.message}` : "Errore import CSV.");
+    } finally {
+      setCsvLoading(false);
+    }
+  };
+
   return (
     <Card className="glass-panel">
       <CardHeader>
@@ -83,12 +302,31 @@ export function PrintFormatsManager({
             <CardDescription>Catalogo studio</CardDescription>
             <CardTitle>Formati di stampa</CardTitle>
           </div>
-          {!isAdding && (
-            <Button onClick={() => setIsAdding(true)}>
-              <Plus className="h-4 w-4" />
-              Aggiungi formato
+          <div className="flex flex-wrap gap-2">
+            {!isAdding && (
+              <Button onClick={() => setIsAdding(true)}>
+                <Plus className="h-4 w-4" />
+                Aggiungi formato
+              </Button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(event) => {
+                void handleImportCsv(event);
+              }}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={csvLoading}>
+              {csvLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Importa CSV
             </Button>
-          )}
+            <Button variant="outline" onClick={downloadCsvTemplate}>
+              <Download className="h-4 w-4" />
+              Template CSV
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -127,7 +365,7 @@ export function PrintFormatsManager({
               />
             </div>
             <div className="field-shell space-y-2">
-              <Label htmlFor="price">Prezzo</Label>
+              <Label htmlFor="price">Prezzo unitario (EUR)</Label>
               <Input
                 id="price"
                 name="price"
@@ -137,6 +375,18 @@ export function PrintFormatsManager({
                 placeholder="3.00"
                 required
               />
+            </div>
+            <div className="field-shell space-y-2 md:col-span-5">
+              <Label htmlFor="tier_prices">Prezzi per quantita (opzionale)</Label>
+              <Input
+                id="tier_prices"
+                name="tier_prices"
+                defaultValue={editing ? formatTierInput(editing.quantity_price_tiers) : ""}
+                placeholder="10:2.70;20:2.50"
+              />
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Formato: minQuantita:prezzoUnitario; es. 10:2.70;20:2.50
+              </p>
             </div>
             <div className="flex flex-wrap gap-3 md:col-span-5">
               <Button type="submit" disabled={loading}>
@@ -158,11 +408,26 @@ export function PrintFormatsManager({
           </form>
         )}
 
+        {message && (
+          <div className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium ${
+            message.startsWith("Errore") ? "border-rose-300 bg-rose-50 text-rose-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"
+          }`}>
+            {message}
+          </div>
+        )}
+        {csvMessage && (
+          <div className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium whitespace-pre-line ${
+            csvMessage.startsWith("Errore") ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-300 bg-sky-50 text-sky-900"
+          }`}>
+            {csvMessage}
+          </div>
+        )}
+
         {formats.length === 0 ? (
           <div className="rounded-[1.75rem] border border-dashed border-[color:var(--border-strong)] bg-white/40 p-10 text-center">
             <p className="text-lg font-semibold text-foreground">Nessun formato configurato</p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Aggiungi il primo formato per iniziare a ricevere ordini dal front-end cliente.
+              Aggiungi il primo formato o importa un CSV per iniziare a ricevere ordini.
             </p>
           </div>
         ) : (
@@ -186,6 +451,11 @@ export function PrintFormatsManager({
                     <p className="mt-1 text-sm text-muted-foreground">
                       {format.width_cm} x {format.height_cm} cm
                     </p>
+                    {formatTierSummary(format.quantity_price_tiers) && (
+                      <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        {formatTierSummary(format.quantity_price_tiers)}
+                      </p>
+                    )}
                   </div>
                 </div>
 

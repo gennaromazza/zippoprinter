@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutAmounts, getPhotographerPaymentMode, requiresOnlinePayment } from "@/lib/payments";
+import { getUnitPriceForQuantity } from "@/lib/pricing";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getStripeClient } from "@/lib/stripe";
 import { normalizeFilename } from "@/lib/uploads";
@@ -17,6 +18,13 @@ interface ManifestItem {
   storagePath?: string;
 }
 
+interface CustomerProfileRecord {
+  id: string;
+}
+
+const MIN_QUANTITY = 1;
+const MAX_QUANTITY = 10;
+
 function getRequestOrigin(request: Request) {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
@@ -32,6 +40,19 @@ function getRequestOrigin(request: Request) {
   return new URL(request.url).origin;
 }
 
+function toSafeQuantity(input: number) {
+  if (!Number.isFinite(input)) {
+    return null;
+  }
+
+  const rounded = Math.round(input);
+  if (rounded < MIN_QUANTITY || rounded > MAX_QUANTITY) {
+    return null;
+  }
+
+  return rounded;
+}
+
 export async function POST(request: Request) {
   const admin = createAdminClient();
   let createdOrderId: string | null = null;
@@ -42,7 +63,8 @@ export async function POST(request: Request) {
     const isMultipart = contentType.includes("multipart/form-data");
     let photographerId = "";
     let customerEmail = "";
-    let customerName = "";
+    let customerFirstName = "";
+    let customerLastName = "";
     let customerPhone = "";
     let manifestInput = "[]";
     let formData: FormData | null = null;
@@ -51,21 +73,24 @@ export async function POST(request: Request) {
       formData = await request.formData();
       photographerId = String(formData.get("photographerId") || "");
       customerEmail = String(formData.get("customerEmail") || "").trim();
-      customerName = String(formData.get("customerName") || "").trim();
+      customerFirstName = String(formData.get("customerFirstName") || "").trim();
+      customerLastName = String(formData.get("customerLastName") || "").trim();
       customerPhone = String(formData.get("customerPhone") || "").trim();
       manifestInput = String(formData.get("manifest") || "[]");
     } else {
       const body = (await request.json()) as {
         photographerId?: string;
         customerEmail?: string;
-        customerName?: string;
+        customerFirstName?: string;
+        customerLastName?: string;
         customerPhone?: string;
         manifest?: ManifestItem[];
       };
 
       photographerId = String(body.photographerId || "");
       customerEmail = String(body.customerEmail || "").trim();
-      customerName = String(body.customerName || "").trim();
+      customerFirstName = String(body.customerFirstName || "").trim();
+      customerLastName = String(body.customerLastName || "").trim();
       customerPhone = String(body.customerPhone || "").trim();
       manifestInput = JSON.stringify(body.manifest || []);
     }
@@ -78,9 +103,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Manifest ordine non valido." }, { status: 400 });
     }
 
-    if (!photographerId || !customerEmail || manifest.length === 0) {
+    if (!photographerId || !customerEmail || !customerFirstName || !customerLastName || manifest.length === 0) {
       return NextResponse.json({ error: "Dati ordine incompleti." }, { status: 400 });
     }
+
+    const customerName = `${customerFirstName} ${customerLastName}`.trim();
 
     const { data: photographerData } = await admin
       .from("photographers")
@@ -105,26 +132,89 @@ export async function POST(request: Request) {
 
     const lineItems = manifest.map((item) => {
       const format = formatMap.get(item.formatId);
+      const safeQuantity = toSafeQuantity(Number(item.quantity));
 
       if (!format) {
         throw new Error("Uno dei formati selezionati non e disponibile.");
       }
+      if (!safeQuantity) {
+        throw new Error("Quantita non valida: ogni foto deve avere una quantita tra 1 e 10.");
+      }
+
+      const unitPriceCents = getUnitPriceForQuantity(format, safeQuantity);
 
       return {
         ...item,
+        quantity: safeQuantity,
         format,
-        subtotal: format.price_cents * item.quantity,
+        unitPriceCents,
+        subtotal: unitPriceCents * safeQuantity,
       };
     });
 
     const totalCents = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+    if (totalCents <= 0) {
+      throw new Error("Totale ordine non valido.");
+    }
     const paymentPlan = getCheckoutAmounts(totalCents, photographer);
     const paymentMode = getPhotographerPaymentMode(photographer);
 
+    if (requiresOnlinePayment(paymentMode) && paymentPlan.dueNowCents <= 0) {
+      throw new Error("Configurazione pagamento non valida: importo online uguale a zero.");
+    }
+
+    let customerId: string | null = null;
+
+    const customerUpsertPayload = {
+      photographer_id: photographerId,
+      email: customerEmail,
+      first_name: customerFirstName,
+      last_name: customerLastName,
+      name: customerName,
+      phone: customerPhone || null,
+    };
+
+    const { data: existingCustomer } = await admin
+      .from("customers")
+      .select("id")
+      .eq("photographer_id", photographerId)
+      .ilike("email", customerEmail)
+      .maybeSingle();
+
+    if (existingCustomer) {
+      const { data: updatedCustomer, error: customerUpdateError } = await admin
+        .from("customers")
+        .update(customerUpsertPayload)
+        .eq("id", existingCustomer.id)
+        .select("id")
+        .single();
+
+      if (customerUpdateError || !updatedCustomer) {
+        throw new Error(customerUpdateError?.message || "Non e stato possibile aggiornare l'anagrafica cliente.");
+      }
+
+      customerId = (updatedCustomer as CustomerProfileRecord).id;
+    } else {
+      const { data: createdCustomer, error: customerInsertError } = await admin
+        .from("customers")
+        .insert(customerUpsertPayload)
+        .select("id")
+        .single();
+
+      if (customerInsertError || !createdCustomer) {
+        throw new Error(customerInsertError?.message || "Non e stato possibile creare l'anagrafica cliente.");
+      }
+
+      customerId = (createdCustomer as CustomerProfileRecord).id;
+    }
+
     const baseOrderPayload = {
       photographer_id: photographerId,
+      customer_id: customerId,
       customer_email: customerEmail,
       customer_name: customerName || null,
+      customer_first_name: customerFirstName || null,
+      customer_last_name: customerLastName || null,
       customer_phone: customerPhone || null,
       status: "pending",
       total_cents: totalCents,
@@ -203,7 +293,7 @@ export async function POST(request: Request) {
         order_id: createdOrder.id,
         print_format_id: item.format.id,
         format_name: item.format.name,
-        format_price_cents: item.format.price_cents,
+        format_price_cents: item.unitPriceCents,
         quantity: item.quantity,
         storage_path: storagePath,
         original_filename: item.originalFilename,

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { ExternalLink, ImageIcon, LogOut, Package, Palette, Sparkles, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
-import { formatCurrency, formatShortDate, orderStatusMeta } from "@/lib/orders";
+import { formatCurrency, formatShortDate, getOrderCustomerDisplayName, orderStatusMeta } from "@/lib/orders";
 import { getStudioHref } from "@/lib/studio-paths";
 import { getPaymentModeLabel } from "@/lib/payments";
 import type { Order, Photographer } from "@/lib/types";
@@ -116,7 +116,7 @@ export default async function AdminDashboard() {
                     return (
                       <Link key={order.id} href={`/admin/orders/${order.id}`} className="flex flex-col gap-4 rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--muted)]/15 p-4 hover:bg-[color:var(--muted)]/35 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <p className="text-base font-semibold text-foreground">{order.customer_name || order.customer_email}</p>
+                          <p className="text-base font-semibold text-foreground">{getOrderCustomerDisplayName(order)}</p>
                           <p className="mt-1 text-sm text-muted-foreground">{formatShortDate(order.created_at)}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">

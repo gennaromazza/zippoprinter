@@ -1,18 +1,35 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, CheckCircle2, CreditCard, MessageCircle, Package, Play, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CreditCard, MessageCircle, Package, Play, ReceiptText, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
-import { formatCurrency, formatDateTime, orderStatusMeta, paymentModeLabel, paymentStatusMeta } from "@/lib/orders";
+import {
+  formatCurrency,
+  formatDateTime,
+  getOrderCustomerDisplayName,
+  orderStatusMeta,
+  paymentModeLabel,
+  paymentStatusMeta,
+} from "@/lib/orders";
 import { getOrderPaymentHeadline } from "@/lib/payments";
 import type { Order, OrderItem, Photographer } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { deleteOrderPhotos, recordOrderPayment, updateOrderStatus } from "./actions";
+import { OrderExportPanel } from "./order-export-panel";
+import { deleteOrderPhotos, recordOrderDeposit, recordOrderPayment, updateOrderStatus } from "./actions";
 
 interface OrderItemWithUrl extends OrderItem {
   signedUrl?: string;
+}
+
+function buildWhatsAppHref(phone: string | null, text: string) {
+  const normalized = (phone || "").replace(/\D/g, "");
+  if (!normalized) {
+    return "";
+  }
+
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
 }
 
 export default async function OrderDetailPage({
@@ -50,9 +67,22 @@ export default async function OrderDetailPage({
   const payment = paymentStatusMeta[order.payment_status || "unpaid"];
   const amountPaidCents = order.amount_paid_cents ?? 0;
   const amountDueCents = order.amount_due_cents ?? order.total_cents ?? 0;
-  const whatsappUrl = order.customer_phone
-    ? `https://wa.me/${order.customer_phone.replace(/\D/g, "")}?text=${encodeURIComponent("Ciao! Il tuo ordine di stampe e pronto per il ritiro.")}`
-    : "#";
+  const paymentMode = order.payment_mode_snapshot || "pay_in_store";
+  const canStartPrinting =
+    paymentMode === "pay_in_store" ||
+    order.payment_status === "paid" ||
+    order.payment_status === "partial" ||
+    order.payment_status === "not_required" ||
+    amountPaidCents > 0;
+  const customerLabel = getOrderCustomerDisplayName(order);
+  const readyMessage = `Ciao ${customerLabel}, il tuo ordine ${order.id} e pronto per il ritiro in studio.`;
+  const depositReceiptMessage = `Ciao ${customerLabel}, abbiamo registrato l'acconto per l'ordine ${order.id}. Totale ordine: ${formatCurrency(order.total_cents)}. Acconto ricevuto: ${formatCurrency(amountPaidCents)}. Saldo residuo: ${formatCurrency(amountDueCents)}.`;
+  const saldoReminderMessage = `Ciao ${customerLabel}, per completare l'ordine ${order.id} resta da saldare ${formatCurrency(amountDueCents)}. Totale ordine: ${formatCurrency(order.total_cents)}.`;
+  const paidReceiptMessage = `Ciao ${customerLabel}, confermiamo il saldo completo dell'ordine ${order.id}. Totale pagato: ${formatCurrency(order.total_cents)}. Grazie!`;
+  const whatsappReadyUrl = buildWhatsAppHref(order.customer_phone, readyMessage);
+  const whatsappDepositUrl = buildWhatsAppHref(order.customer_phone, depositReceiptMessage);
+  const whatsappSaldoUrl = buildWhatsAppHref(order.customer_phone, saldoReminderMessage);
+  const whatsappPaidUrl = buildWhatsAppHref(order.customer_phone, paidReceiptMessage);
 
   return (
     <div className="min-h-screen px-4 py-5 md:px-8 md:py-8">
@@ -65,7 +95,7 @@ export default async function OrderDetailPage({
               </Link>
               <div>
                 <p className="section-kicker mb-2">Dettaglio ordine</p>
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{order.customer_name || order.customer_email}</h1>
+                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{customerLabel}</h1>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">Ricevuto il {formatDateTime(order.created_at)}</p>
               </div>
             </div>
@@ -78,14 +108,41 @@ export default async function OrderDetailPage({
         </header>
 
         <main className="mt-6 space-y-6">
+          <OrderExportPanel orderId={order.id} />
+
           <section className="grid gap-5 lg:grid-cols-4">
             <Card className="border-[color:var(--border)] bg-white">
               <CardHeader><CardDescription>Cliente</CardDescription><CardTitle>Contatti</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm leading-6">
                 <p><span className="font-semibold">Email:</span> {order.customer_email}</p>
-                {order.customer_name && <p><span className="font-semibold">Nome:</span> {order.customer_name}</p>}
+                {order.customer_first_name && <p><span className="font-semibold">Nome:</span> {order.customer_first_name}</p>}
+                {order.customer_last_name && <p><span className="font-semibold">Cognome:</span> {order.customer_last_name}</p>}
+                {!order.customer_first_name && order.customer_name && <p><span className="font-semibold">Nome:</span> {order.customer_name}</p>}
                 {order.customer_phone && <p><span className="font-semibold">Telefono:</span> {order.customer_phone}</p>}
-                {order.customer_phone && <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-4 py-3 text-sm font-semibold text-foreground hover:bg-[color:var(--muted)]"><MessageCircle className="h-4 w-4" />Prepara messaggio</a>}
+                {whatsappReadyUrl && (
+                  <a href={whatsappReadyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-4 py-3 text-sm font-semibold text-foreground hover:bg-[color:var(--muted)]">
+                    <MessageCircle className="h-4 w-4" />
+                    Messaggio ordine pronto
+                  </a>
+                )}
+                {paymentMode === "deposit_plus_studio" && order.payment_status === "partial" && whatsappDepositUrl && (
+                  <a href={whatsappDepositUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-100">
+                    <ReceiptText className="h-4 w-4" />
+                    Ricevuta acconto
+                  </a>
+                )}
+                {amountDueCents > 0 && whatsappSaldoUrl && (
+                  <a href={whatsappSaldoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[color:var(--border)] bg-white px-4 py-3 text-sm font-semibold text-foreground hover:bg-[color:var(--muted)]/35">
+                    <CreditCard className="h-4 w-4" />
+                    Richiesta saldo
+                  </a>
+                )}
+                {amountDueCents === 0 && whatsappPaidUrl && (
+                  <a href={whatsappPaidUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 hover:bg-emerald-100">
+                    <ReceiptText className="h-4 w-4" />
+                    Ricevuta saldo completo
+                  </a>
+                )}
               </CardContent>
             </Card>
 
@@ -94,17 +151,25 @@ export default async function OrderDetailPage({
               <CardContent className="space-y-3 text-sm leading-6">
                 <p><span className="font-semibold">Incassato:</span> {formatCurrency(amountPaidCents)}</p>
                 <p><span className="font-semibold">Residuo:</span> {formatCurrency(amountDueCents)}</p>
-                <p><span className="font-semibold">Modalita:</span> {paymentModeLabel(order.payment_mode_snapshot || "pay_in_store")}</p>
+                <p><span className="font-semibold">Modalita:</span> {paymentModeLabel(paymentMode)}</p>
               </CardContent>
             </Card>
 
             <Card className="border-[color:var(--border)] bg-white lg:col-span-2">
               <CardHeader><CardDescription>Operazioni rapide</CardDescription><CardTitle>{getOrderPaymentHeadline(order)}</CardTitle></CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {(order.payment_status === "unpaid" || order.payment_status === "partial" || order.payment_mode_snapshot === "pay_in_store" || !order.payment_status) && amountDueCents > 0 && (
+                {paymentMode === "deposit_plus_studio" && order.payment_status === "unpaid" && amountDueCents > 0 && (
+                  <form action={recordOrderDeposit.bind(null, order.id)}>
+                    <Button variant="outline" className="w-full">
+                      <ReceiptText className="h-4 w-4" />
+                      Registra acconto
+                    </Button>
+                  </form>
+                )}
+                {(order.payment_status === "unpaid" || order.payment_status === "partial" || paymentMode === "pay_in_store" || !order.payment_status) && amountDueCents > 0 && (
                   <form action={recordOrderPayment.bind(null, order.id)}><Button className="w-full"><CreditCard className="h-4 w-4" />Registra pagamento</Button></form>
                 )}
-                {(order.status === "pending" || order.status === "paid") && (
+                {(order.status === "pending" || order.status === "paid") && canStartPrinting && (
                   <form action={updateOrderStatus.bind(null, order.id, "printing")}><Button variant="outline" className="w-full"><Play className="h-4 w-4" />Avvia stampa</Button></form>
                 )}
                 {order.status === "printing" && (
@@ -117,6 +182,13 @@ export default async function OrderDetailPage({
                   <form action={deleteOrderPhotos.bind(null, order.id, itemsWithUrls.map((item) => item.storage_path))}><Button variant="destructive" className="w-full"><Trash2 className="h-4 w-4" />Elimina foto archiviate</Button></form>
                 )}
               </CardContent>
+              {(order.status === "pending" || order.status === "paid") && !canStartPrinting && (
+                <CardContent className="pt-0">
+                  <p className="rounded-[1.2rem] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    Non puoi avviare la stampa: ordine senza pagamento o acconto registrato.
+                  </p>
+                </CardContent>
+              )}
             </Card>
           </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Copy, CreditCard, Loader2, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -13,9 +14,67 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
+const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const LOGO_MAX_BYTES = 4 * 1024 * 1024;
+const LOGO_MIN_WIDTH = 300;
+const LOGO_MIN_HEIGHT = 300;
+const LOGO_MAX_WIDTH = 4000;
+const LOGO_MAX_HEIGHT = 4000;
+
+function clampPercent(value: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return 50;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(value as number)));
+}
+
+function formatMegabytes(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function readImageDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+
+    image.onload = () => {
+      resolve({ width: image.width, height: image.height });
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    image.onerror = () => {
+      reject(new Error("Impossibile leggere le dimensioni del logo."));
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function isMissingPublicProfileSchemaError(message: string | undefined | null) {
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("website_url") ||
+    message.includes("instagram_url") ||
+    message.includes("logo_position_x") ||
+    message.includes("logo_position_y")
+  );
+}
+
 export function PhotographerSettings({ photographer }: { photographer: Photographer | null }) {
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [logoUrl, setLogoUrl] = useState(photographer?.logo_url || "");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoMessage, setLogoMessage] = useState("");
+  const [logoSizeInfo, setLogoSizeInfo] = useState<{ width: number; height: number; bytes: number } | null>(null);
+  const [logoPositionX, setLogoPositionX] = useState(clampPercent(photographer?.logo_position_x));
+  const [logoPositionY, setLogoPositionY] = useState(clampPercent(photographer?.logo_position_y));
   const [brandColor, setBrandColor] = useState(photographer?.brand_color || "#8f5d2c");
   const [paymentMode, setPaymentMode] = useState(photographer?.payment_mode || "pay_in_store");
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
@@ -26,18 +85,11 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     }
     return String(photographer.deposit_value);
   });
-  const [origin] = useState(() => {
-    if (typeof window !== "undefined") {
-      return window.location.origin;
-    }
-
-    return process.env.NEXT_PUBLIC_SITE_URL || "";
-  });
   const [copied, setCopied] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const publicPath = photographer?.id ? getStudioHref(photographer.id) : "/studio";
-  const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
+  const publicUrl = publicPath;
 
   useEffect(() => {
     if (!copied) return;
@@ -45,9 +97,19 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     return () => window.clearTimeout(timeout);
   }, [copied]);
 
+  useEffect(() => {
+    setLogoUrl(photographer?.logo_url || "");
+    setLogoPositionX(clampPercent(photographer?.logo_position_x));
+    setLogoPositionY(clampPercent(photographer?.logo_position_y));
+    setLogoSizeInfo(null);
+    setLogoMessage("");
+  }, [photographer]);
+
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(publicUrl);
+      const absoluteUrl =
+        typeof window !== "undefined" ? `${window.location.origin}${publicPath}` : publicPath;
+      await navigator.clipboard.writeText(absoluteUrl);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -62,18 +124,50 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     setMessage("");
 
     const formData = new FormData(event.currentTarget);
-    const parsedDepositValue = Number.parseFloat((formData.get("deposit_value") as string) || "0");
-    const normalizedDepositValue =
-      paymentMode === "deposit_plus_studio"
-        ? depositType === "fixed"
-          ? Math.round(parsedDepositValue * 100)
-          : Math.round(parsedDepositValue)
-        : null;
+    const normalizedLogoUrl = logoUrl.trim();
+    if (!normalizedLogoUrl) {
+      setLoading(false);
+      setMessage("Errore: il logo studio e obbligatorio per la pagina pubblica.");
+      return;
+    }
+
+    const rawDepositValue = String(formData.get("deposit_value") || "").replace(",", ".");
+    const parsedDepositValue = Number.parseFloat(rawDepositValue);
+    let normalizedDepositValue: number | null = null;
+
+    if (paymentMode === "deposit_plus_studio") {
+      if (!Number.isFinite(parsedDepositValue) || parsedDepositValue <= 0) {
+        setLoading(false);
+        setMessage("Errore: inserisci un valore acconto valido.");
+        return;
+      }
+
+      if (depositType === "fixed") {
+        if (parsedDepositValue > 100000) {
+          setLoading(false);
+          setMessage("Errore: importo acconto troppo alto.");
+          return;
+        }
+        normalizedDepositValue = Math.round(parsedDepositValue * 100);
+      } else {
+        if (parsedDepositValue < 1 || parsedDepositValue > 100) {
+          setLoading(false);
+          setMessage("Errore: la percentuale acconto deve essere tra 1 e 100.");
+          return;
+        }
+        normalizedDepositValue = Math.round(parsedDepositValue);
+      }
+    }
 
     const basePayload = {
       name: formData.get("name"),
+      logo_url: normalizedLogoUrl,
+      logo_position_x: clampPercent(logoPositionX),
+      logo_position_y: clampPercent(logoPositionY),
       phone: formData.get("phone"),
       whatsapp_number: formData.get("whatsapp"),
+      website_url: String(formData.get("website_url") || "").trim() || null,
+      instagram_url: String(formData.get("instagram_url") || "").trim() || null,
       brand_color: formData.get("brand_color"),
       custom_welcome_text: formData.get("welcome_text"),
     };
@@ -99,7 +193,13 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     setLoading(false);
 
     if (error) {
-      setMessage("Errore nel salvataggio delle impostazioni.");
+      if (isMissingPublicProfileSchemaError(error.message)) {
+        setMessage(
+          "Errore: schema non aggiornato. Esegui le migration 006_public_studio_profile_links.sql e 007_logo_positioning_controls.sql."
+        );
+      } else {
+        setMessage("Errore nel salvataggio delle impostazioni.");
+      }
     } else {
       setMessage(
         paymentSchemaMissing
@@ -107,6 +207,74 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
           : "Impostazioni aggiornate correttamente."
       );
       router.refresh();
+    }
+  };
+
+  const handleLogoFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setLogoMessage("");
+
+    if (!LOGO_ALLOWED_TYPES.includes(file.type)) {
+      setLogoMessage("Errore: formato non supportato. Usa JPG, PNG o WEBP.");
+      return;
+    }
+
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoMessage(`Errore: il file supera ${formatMegabytes(LOGO_MAX_BYTES)}.`);
+      return;
+    }
+
+    let dimensions: { width: number; height: number };
+    try {
+      dimensions = await readImageDimensions(file);
+    } catch (error) {
+      setLogoMessage(error instanceof Error ? error.message : "Errore lettura immagine.");
+      return;
+    }
+
+    if (
+      dimensions.width < LOGO_MIN_WIDTH ||
+      dimensions.height < LOGO_MIN_HEIGHT ||
+      dimensions.width > LOGO_MAX_WIDTH ||
+      dimensions.height > LOGO_MAX_HEIGHT
+    ) {
+      setLogoMessage(
+        `Errore: risoluzione non valida (${dimensions.width}x${dimensions.height}px). Usa un logo tra ${LOGO_MIN_WIDTH}x${LOGO_MIN_HEIGHT}px e ${LOGO_MAX_WIDTH}x${LOGO_MAX_HEIGHT}px.`
+      );
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/admin/settings/logo-upload", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as { error?: string; url?: string };
+
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || "Upload logo non riuscito.");
+      }
+
+      setLogoUrl(payload.url);
+      setLogoSizeInfo({
+        width: dimensions.width,
+        height: dimensions.height,
+        bytes: file.size,
+      });
+      setLogoMessage("Logo caricato con successo. Ora puoi regolare il posizionamento e salvare.");
+    } catch (error) {
+      setLogoMessage(error instanceof Error ? error.message : "Errore durante l'upload logo.");
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -142,6 +310,128 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                 placeholder="Studio Fotografico Zippo"
               />
             </div>
+            <div className="rounded-[1.6rem] border border-[color:var(--border)] bg-white/70 p-4 md:col-span-2">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <Label htmlFor="logo-upload">Logo studio *</Label>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Formati ammessi JPG/PNG/WEBP. Peso max {formatMegabytes(LOGO_MAX_BYTES)}.
+                    Risoluzione tra {LOGO_MIN_WIDTH}x{LOGO_MIN_HEIGHT}px e {LOGO_MAX_WIDTH}x{LOGO_MAX_HEIGHT}px.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    ref={logoFileInputRef}
+                    id="logo-upload"
+                    type="file"
+                    accept={LOGO_ALLOWED_TYPES.join(",")}
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleLogoFileSelect(event);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={logoUploading}
+                    onClick={() => logoFileInputRef.current?.click()}
+                  >
+                    {logoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Carica logo"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-[180px,1fr]">
+                <div className="relative h-[180px] overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35">
+                  {logoUrl ? (
+                    <Image
+                      src={logoUrl}
+                      alt="Anteprima logo studio"
+                      fill
+                      unoptimized
+                      className="object-cover"
+                      style={{ objectPosition: `${logoPositionX}% ${logoPositionY}%` }}
+                      sizes="180px"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                      Nessun logo caricato
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="field-shell space-y-2">
+                    <Label htmlFor="logo_url">URL logo</Label>
+                    <Input
+                      id="logo_url"
+                      name="logo_url"
+                      type="url"
+                      value={logoUrl}
+                      onChange={(event) => setLogoUrl(event.target.value)}
+                      placeholder="https://.../logo.png"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="field-shell space-y-2">
+                      <Label htmlFor="logo-position-x">Riposizionamento orizzontale ({logoPositionX}%)</Label>
+                      <input
+                        id="logo-position-x"
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={logoPositionX}
+                        onChange={(event) => setLogoPositionX(clampPercent(Number.parseInt(event.target.value, 10)))}
+                        className="w-full accent-primary"
+                      />
+                    </div>
+                    <div className="field-shell space-y-2">
+                      <Label htmlFor="logo-position-y">Riposizionamento verticale ({logoPositionY}%)</Label>
+                      <input
+                        id="logo-position-y"
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={logoPositionY}
+                        onChange={(event) => setLogoPositionY(clampPercent(Number.parseInt(event.target.value, 10)))}
+                        className="w-full accent-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setLogoPositionX(50);
+                        setLogoPositionY(50);
+                      }}
+                    >
+                      Centra logo
+                    </Button>
+                  </div>
+
+                  {logoSizeInfo && (
+                    <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      Ultimo file caricato: {logoSizeInfo.width}x{logoSizeInfo.height}px, {formatMegabytes(logoSizeInfo.bytes)}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {logoMessage && (
+                <p
+                  className={`mt-3 text-sm font-medium ${
+                    logoMessage.startsWith("Errore") ? "text-red-700" : "text-emerald-700"
+                  }`}
+                >
+                  {logoMessage}
+                </p>
+              )}
+            </div>
             <div className="field-shell space-y-2">
               <Label htmlFor="phone">Telefono</Label>
               <Input
@@ -158,6 +448,26 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                 name="whatsapp"
                 defaultValue={photographer?.whatsapp_number || ""}
                 placeholder="393331234567"
+              />
+            </div>
+            <div className="field-shell space-y-2">
+              <Label htmlFor="website_url">Sito web (pubblico)</Label>
+              <Input
+                id="website_url"
+                name="website_url"
+                type="url"
+                defaultValue={photographer?.website_url || ""}
+                placeholder="https://www.miosito.it"
+              />
+            </div>
+            <div className="field-shell space-y-2">
+              <Label htmlFor="instagram_url">Instagram (pubblico)</Label>
+              <Input
+                id="instagram_url"
+                name="instagram_url"
+                type="url"
+                defaultValue={photographer?.instagram_url || ""}
+                placeholder="https://instagram.com/mio_studio"
               />
             </div>
             <div className="field-shell space-y-3">
@@ -269,6 +579,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                     type="number"
                     step={depositType === "fixed" ? "0.01" : "1"}
                     min="1"
+                    max={depositType === "fixed" ? "100000" : "100"}
                     value={depositValue}
                     onChange={(event) => setDepositValue(event.target.value)}
                     placeholder={depositType === "fixed" ? "10.00" : "30"}

@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Eye, MessageCircle } from "lucide-react";
-import { formatCurrency, formatDateTime, orderStatusMeta, paymentStatusMeta } from "@/lib/orders";
+import {
+  formatCurrency,
+  formatDateTime,
+  getOrderCustomerDisplayName,
+  orderStatusMeta,
+  paymentStatusMeta,
+} from "@/lib/orders";
 import type { Order, OrderItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
@@ -61,6 +67,7 @@ export function OrdersBoard({ orders }: { orders: OrderCard[] }) {
           const status = orderStatusMeta[order.status];
           const payment = paymentStatusMeta[order.payment_status || "unpaid"];
           const whatsappHref = order.customer_phone ? `https://wa.me/${order.customer_phone.replace(/\D/g, "")}?text=${encodeURIComponent("Ciao! Ti aggiorniamo sul tuo ordine di stampa.")}` : null;
+          const customerLabel = getOrderCustomerDisplayName(order);
 
           return (
             <article key={order.id} className="grid gap-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white p-5 shadow-[var(--shadow-sm)] lg:grid-cols-[112px_1fr_auto]">
@@ -76,7 +83,7 @@ export function OrdersBoard({ orders }: { orders: OrderCard[] }) {
               <div className="space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-foreground">{order.customer_name || order.customer_email}</h3>
+                    <h3 className="text-lg font-semibold text-foreground">{customerLabel}</h3>
                     <p className="text-sm leading-6 text-muted-foreground">{formatDateTime(order.created_at)}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">

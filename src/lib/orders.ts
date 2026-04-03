@@ -1,4 +1,4 @@
-import type { OrderPaymentStatus, OrderStatus, PaymentMode } from "./types";
+import type { Order, OrderPaymentStatus, OrderStatus, PaymentMode } from "./types";
 
 export const orderStatusMeta: Record<
   OrderStatus,
@@ -107,4 +107,15 @@ export function formatShortDate(value: string) {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(value));
+}
+
+export function getOrderCustomerDisplayName(
+  order: Pick<Order, "customer_email" | "customer_name" | "customer_first_name" | "customer_last_name">
+) {
+  const separatedName = [order.customer_first_name, order.customer_last_name]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return separatedName || order.customer_name || order.customer_email;
 }

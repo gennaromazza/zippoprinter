@@ -31,7 +31,13 @@ function clampAmount(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export function getDepositAmountCents(totalCents: number, photographer: Photographer | null | undefined) {
+export function getDepositAmountCents(
+  totalCents: number,
+  photographer:
+    | Pick<Photographer, "deposit_type" | "deposit_value">
+    | null
+    | undefined
+) {
   const type = photographer?.deposit_type || "percentage";
   const rawValue = photographer?.deposit_value ?? 30;
 
