@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type WizardStep = "customer" | "upload" | "format" | "checkout" | "success";
+type ActiveWizardStep = Exclude<WizardStep, "success">;
 
 interface PhotoSelection {
   id: string;
@@ -281,6 +282,15 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const canMoveToFormat = photos.length > 0 && formats.length > 0;
   const canCheckout = photos.length > 0 && allFormatsAssigned;
   const paymentBlocked = paymentPlan.mode !== "pay_in_store" && !stripeEnabled;
+  const stepOrder: ActiveWizardStep[] = ["customer", "upload", "format", "checkout"];
+  const stepTitles: Record<ActiveWizardStep, string> = {
+    customer: "Dati cliente",
+    upload: "Caricamento foto",
+    format: "Formati",
+    checkout: "Checkout",
+  };
+  const currentStepIndex = Math.max(0, stepOrder.indexOf(step as ActiveWizardStep));
+  const currentStepTitle = stepTitles[(step as ActiveWizardStep) || "customer"] || stepTitles.customer;
 
   useEffect(() => {
     photosRef.current = photos;
@@ -589,9 +599,20 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   }
 
   return (
-    <section className="space-y-4 pb-20 md:pb-8">
-      <div className="sticky top-4 z-20 rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] backdrop-blur md:px-6">
-        <div className="flex gap-4 overflow-x-auto pb-1">
+    <section className="space-y-4 pb-6 md:pb-8">
+      <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] md:sticky md:top-4 md:z-20 md:backdrop-blur md:px-6">
+        <div className="flex items-center justify-between md:hidden">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Step {currentStepIndex + 1} di {stepOrder.length}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-foreground">{currentStepTitle}</p>
+          </div>
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {Math.round(((currentStepIndex + 1) / stepOrder.length) * 100)}%
+          </span>
+        </div>
+        <div className="hidden gap-4 overflow-x-auto pb-1 md:flex">
           <StepDot number={1} title="Dati cliente" active={step === "customer"} complete={step !== "customer"} />
           <StepDot number={2} title="Caricamento foto" active={step === "upload"} complete={step === "format" || step === "checkout"} />
           <StepDot number={3} title="Formati" active={step === "format"} complete={step === "checkout"} />
@@ -717,7 +738,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             headline="Assegna i formati"
             note="Scegli un formato attivo e tocca le foto per assegnarlo subito. Quando tutte hanno un formato passi alla fase quantita."
           >
-            <div className="sticky top-[5.3rem] z-10 space-y-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white/95 p-4 shadow-[var(--shadow-sm)] backdrop-blur">
+            <div className="space-y-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white/95 p-4 shadow-[var(--shadow-sm)] md:sticky md:top-[5.3rem] md:z-10 md:backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
@@ -1102,7 +1123,7 @@ function SummaryBlock({
 
 function StickyActionBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-3 z-20 rounded-[1.8rem] border border-[color:var(--border)] bg-white px-4 py-4 shadow-[var(--shadow-md)] md:px-6">
+    <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white px-4 py-4 shadow-[var(--shadow-md)] md:sticky md:bottom-3 md:z-20 md:px-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">{children}</div>
     </div>
   );
