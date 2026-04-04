@@ -3,8 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutAmounts, getPhotographerPaymentMode, requiresOnlinePayment } from "@/lib/payments";
 import { getUnitPriceForQuantity } from "@/lib/pricing";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
-import { getStripeClient } from "@/lib/stripe";
+import { getConnectedStripeClientForTenant, getStripeClient } from "@/lib/stripe";
+import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
 import { normalizeFilename } from "@/lib/uploads";
+import { rateLimit } from "@/lib/rate-limit";
 import type { Photographer, PrintFormat } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -24,6 +26,20 @@ interface CustomerProfileRecord {
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
+const MAX_MANIFEST_ITEMS = 50;
+const MAX_FILENAME_LENGTH = 120;
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+
+function hasPathTraversal(value: string) {
+  return value.includes("..");
+}
 
 function getRequestOrigin(request: Request) {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
@@ -59,6 +75,11 @@ export async function POST(request: Request) {
   const uploadedStoragePaths: string[] = [];
 
   try {
+    const rl = rateLimit(request, { key: "public-orders", limit: 10, windowMs: 60_000 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "Troppi tentativi. Riprova tra un minuto." }, { status: 429 });
+    }
+
     const contentType = request.headers.get("content-type") || "";
     const isMultipart = contentType.includes("multipart/form-data");
     let photographerId = "";
@@ -103,8 +124,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Manifest ordine non valido." }, { status: 400 });
     }
 
-    if (!photographerId || !customerEmail || !customerFirstName || !customerLastName || manifest.length === 0) {
+    if (
+      !photographerId ||
+      !customerEmail ||
+      !customerFirstName ||
+      !customerLastName ||
+      manifest.length === 0
+    ) {
       return NextResponse.json({ error: "Dati ordine incompleti." }, { status: 400 });
+    }
+    if (manifest.length > MAX_MANIFEST_ITEMS) {
+      return NextResponse.json({ error: "Troppe immagini in un solo ordine." }, { status: 400 });
+    }
+
+    const seenClientIds = new Set<string>();
+    for (const item of manifest) {
+      if (!item.clientId || !item.formatId) {
+        return NextResponse.json({ error: "Manifest ordine non valido." }, { status: 400 });
+      }
+      if (seenClientIds.has(item.clientId)) {
+        return NextResponse.json({ error: "Manifest ordine non valido." }, { status: 400 });
+      }
+      seenClientIds.add(item.clientId);
+      const originalFilename = String(item.originalFilename || "").trim();
+      if (!originalFilename || originalFilename.length > MAX_FILENAME_LENGTH) {
+        return NextResponse.json({ error: "Nome file non valido." }, { status: 400 });
+      }
+      if (!isMultipart) {
+        const storagePath = String(item.storagePath || "");
+        if (!storagePath) {
+          return NextResponse.json({ error: "Percorso file mancante." }, { status: 400 });
+        }
+        if (hasPathTraversal(storagePath)) {
+          return NextResponse.json({ error: "Percorso file non valido." }, { status: 400 });
+        }
+        const expectedPrefix = `${photographerId}/incoming/`;
+        if (!storagePath.startsWith(expectedPrefix)) {
+          return NextResponse.json({ error: "Percorso file non valido." }, { status: 400 });
+        }
+      }
     }
 
     const customerName = `${customerFirstName} ${customerLastName}`.trim();
@@ -158,9 +216,26 @@ export async function POST(request: Request) {
     }
     const paymentPlan = getCheckoutAmounts(totalCents, photographer);
     const paymentMode = getPhotographerPaymentMode(photographer);
+    const billingContext = await getTenantBillingContext(photographerId);
+    const connectClient = getConnectedStripeClientForTenant(
+      billingContext.billingAccount || { stripe_connect_account_id: null, connect_status: "not_connected" }
+    );
+    const connectReady =
+      Boolean(connectClient) &&
+      billingContext.billingAccount?.connect_status === "connected" &&
+      canUseOnlinePayments(billingContext);
+    const legacyFallbackEnabled =
+      process.env.ENABLE_LEGACY_STRIPE_FALLBACK === "true" &&
+      (billingContext.billingAccount?.legacy_checkout_enabled ?? true);
+    const billingMode = connectReady ? "connect" : legacyFallbackEnabled ? "legacy_fallback" : "disabled";
 
     if (requiresOnlinePayment(paymentMode) && paymentPlan.dueNowCents <= 0) {
       throw new Error("Configurazione pagamento non valida: importo online uguale a zero.");
+    }
+    if (requiresOnlinePayment(paymentMode) && !connectReady && !legacyFallbackEnabled) {
+      throw new Error(
+        "Questo studio non ha ancora completato la configurazione pagamenti online."
+      );
     }
 
     let customerId: string | null = null;
@@ -267,6 +342,12 @@ export async function POST(request: Request) {
         if (!(fileEntry instanceof File)) {
           throw new Error("Una o piu immagini non sono state ricevute correttamente.");
         }
+        if (!ALLOWED_IMAGE_TYPES.has(fileEntry.type)) {
+          throw new Error("Formato immagine non supportato.");
+        }
+        if (fileEntry.size <= 0 || fileEntry.size > MAX_PHOTO_BYTES) {
+          throw new Error("Una o piu immagini superano i limiti consentiti.");
+        }
 
         const extension = fileEntry.name.split(".").pop() || "jpg";
         const safeBase = normalizeFilename(fileEntry.name.replace(/\.[^.]+$/, "")) || item.clientId;
@@ -312,10 +393,18 @@ export async function POST(request: Request) {
         orderId: createdOrder.id,
         paymentRequired: false,
         paymentStatus: "not_required",
+        connectReady,
+        billingMode,
+        fallbackUsed: false,
+        capabilities: {
+          onlinePaymentsEnabled: canUseOnlinePayments(billingContext),
+          customDomainEnabled: Boolean(billingContext.entitlements?.can_use_custom_domain),
+        },
       });
     }
 
-    const stripe = getStripeClient();
+    const stripe = connectReady ? connectClient : getStripeClient();
+    const fallbackUsed = !connectReady;
 
     if (!stripe) {
       throw new Error("Stripe non e configurato per questo ambiente.");
@@ -331,6 +420,17 @@ export async function POST(request: Request) {
         order_id: createdOrder.id,
         photographer_id: photographerId,
         payment_mode: paymentMode,
+        billing_mode: billingMode,
+        connected_account_id: billingContext.billingAccount?.stripe_connect_account_id || "",
+      },
+      payment_intent_data: {
+        metadata: {
+          order_id: createdOrder.id,
+          photographer_id: photographerId,
+          payment_mode: paymentMode,
+          billing_mode: billingMode,
+          connected_account_id: billingContext.billingAccount?.stripe_connect_account_id || "",
+        },
       },
       line_items: [
         {
@@ -352,7 +452,12 @@ export async function POST(request: Request) {
 
     const { error: checkoutError } = await admin
       .from("orders")
-      .update({ stripe_checkout_session_id: session.id })
+      .update({
+        stripe_checkout_session_id: session.id,
+        stripe_connected_account_id: connectReady
+          ? billingContext.billingAccount?.stripe_connect_account_id || null
+          : null,
+      })
       .eq("id", createdOrder.id);
 
     if (checkoutError && !isMissingPaymentSchemaError(checkoutError.message)) {
@@ -364,6 +469,13 @@ export async function POST(request: Request) {
       orderId: createdOrder.id,
       paymentRequired: true,
       checkoutUrl: session.url,
+      connectReady,
+      billingMode,
+      fallbackUsed,
+      capabilities: {
+        onlinePaymentsEnabled: canUseOnlinePayments(billingContext),
+        customDomainEnabled: Boolean(billingContext.entitlements?.can_use_custom_domain),
+      },
     });
   } catch (error) {
     if (uploadedStoragePaths.length > 0) {

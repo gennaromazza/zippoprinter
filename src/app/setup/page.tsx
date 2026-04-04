@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, Database, FolderOpen, Loader2, RefreshCw, User, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,12 +34,22 @@ export default function SetupPage() {
   const [loading, setLoading] = useState(true);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupResult, setSetupResult] = useState<SetupResult | null>(null);
+  const [initSecret, setInitSecret] = useState("");
+  const [secretError, setSecretError] = useState("");
+  const setupEnabled = process.env.NEXT_PUBLIC_ENABLE_SETUP === "true";
 
-  const runDiagnostic = async () => {
+  const runDiagnostic = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/setup");
-      const data = (await response.json()) as DiagnosticResult;
+      const response = await fetch("/api/setup", {
+        headers: initSecret ? { "x-init-secret": initSecret } : undefined,
+      });
+      const data = (await response.json()) as DiagnosticResult & { error?: string };
+      if (!response.ok) {
+        setSecretError(data.error || "Segreto non valido.");
+        setDiagnostic(null);
+        return;
+      }
       setDiagnostic(data);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
@@ -52,7 +62,7 @@ export default function SetupPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [initSecret]);
 
   const runSetup = async () => {
     setSetupLoading(true);
@@ -60,9 +70,14 @@ export default function SetupPage() {
       const response = await fetch("/api/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: "setup-2024" }),
+        body: JSON.stringify({ secret: initSecret }),
       });
       const data = (await response.json()) as SetupResult;
+      if (!response.ok) {
+        setSecretError((data as { error?: string }).error || "Segreto non valido.");
+        setSetupResult(null);
+        return;
+      }
       setSetupResult(data);
       if (data.success) {
         await runDiagnostic();
@@ -78,8 +93,16 @@ export default function SetupPage() {
   };
 
   useEffect(() => {
+    if (!setupEnabled) {
+      setLoading(false);
+      return;
+    }
+    if (!initSecret) {
+      setLoading(false);
+      return;
+    }
     void runDiagnostic();
-  }, []);
+  }, [initSecret, runDiagnostic, setupEnabled]);
 
   const allReady =
     diagnostic &&
@@ -109,6 +132,33 @@ export default function SetupPage() {
             <CardDescription>Controlla connessione, tabelle, storage e auth.</CardDescription>
           </CardHeader>
           <CardContent>
+            {!setupEnabled && (
+              <div className="rounded-[1.5rem] border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                La pagina di setup e disabilitata in questo ambiente. Abilitala con
+                `NEXT_PUBLIC_ENABLE_SETUP=true`.
+              </div>
+            )}
+            {setupEnabled && (
+            <div className="mb-5 rounded-[1.4rem] border border-[color:var(--border)] bg-white/80 px-4 py-3">
+              <p className="text-sm font-semibold text-foreground">Segreto di inizializzazione</p>
+              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Richiesto per leggere la diagnostica e avviare il setup.
+              </p>
+              <input
+                type="password"
+                value={initSecret}
+                onChange={(event) => {
+                  setSecretError("");
+                  setInitSecret(event.target.value);
+                }}
+                placeholder="INIT_SECRET"
+                className="mt-3 w-full rounded-2xl border border-[color:var(--border)] bg-transparent px-4 py-2 text-sm font-medium text-foreground outline-none"
+              />
+              {secretError && (
+                <p className="mt-2 text-sm font-medium text-red-700">{secretError}</p>
+              )}
+            </div>
+            )}
             {loading ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -169,7 +219,18 @@ export default function SetupPage() {
                   </div>
                 </div>
 
-                <Button variant="outline" size="sm" onClick={runDiagnostic}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!initSecret.trim()) {
+                      setSecretError("Inserisci INIT_SECRET per continuare.");
+                      return;
+                    }
+                    void runDiagnostic();
+                  }}
+                  disabled={!setupEnabled}
+                >
                   <RefreshCw className="h-4 w-4" />
                   Aggiorna
                 </Button>
@@ -187,7 +248,7 @@ export default function SetupPage() {
             {!allReady ? (
               <div className="space-y-4">
                 <p className="text-sm leading-6 text-muted-foreground">
-                  Usa il setup automatico per creare l’utente admin e il bucket `photos`.
+                  Usa il setup automatico per creare l&apos;utente admin e il bucket `photos`.
                 </p>
 
                 {setupResult && (
@@ -217,7 +278,16 @@ export default function SetupPage() {
                   </div>
                 )}
 
-                <Button onClick={runSetup} disabled={setupLoading || setupResult?.success}>
+                <Button
+                  onClick={async () => {
+                    if (!initSecret.trim()) {
+                      setSecretError("Inserisci INIT_SECRET per continuare.");
+                      return;
+                    }
+                    await runSetup();
+                  }}
+                  disabled={!setupEnabled || setupLoading || setupResult?.success}
+                >
                   {setupLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -236,15 +306,14 @@ export default function SetupPage() {
                 <div>
                   <h3 className="text-2xl font-semibold text-foreground">Ambiente pronto</h3>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    L’applicazione risulta configurata correttamente.
+                    L&apos;applicazione risulta configurata correttamente.
                   </p>
                 </div>
                 <div className="mx-auto max-w-md rounded-[1.5rem] border border-[color:var(--border)] bg-white/75 p-4 text-left">
                   <p className="text-sm font-semibold text-foreground">Credenziali accesso</p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Email: admin@studiofotograficozippoprinter.com
+                    Email e password sono quelle configurate in ambiente.
                   </p>
-                  <p className="text-sm text-muted-foreground">Password: ZippoPrinter2024!</p>
                 </div>
                 <div className="flex flex-col justify-center gap-3 sm:flex-row">
                   <Link href="/admin" className="inline-flex">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildStoragePath } from "@/lib/uploads";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,8 +11,20 @@ interface UploadRequestItem {
   originalFilename: string;
 }
 
+const MAX_UPLOAD_FILES = 50;
+const MAX_FILENAME_LENGTH = 120;
+
+function isSafeClientId(value: string) {
+  return /^[a-zA-Z0-9_-]{8,64}$/.test(value);
+}
+
 export async function POST(request: Request) {
   try {
+    const rl = rateLimit(request, { key: "public-uploads", limit: 20, windowMs: 60_000 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "Troppi tentativi. Riprova tra un minuto." }, { status: 429 });
+    }
+
     const body = (await request.json()) as {
       photographerId?: string;
       files?: UploadRequestItem[];
@@ -22,6 +35,19 @@ export async function POST(request: Request) {
 
     if (!photographerId || files.length === 0) {
       return NextResponse.json({ error: "Dati upload incompleti." }, { status: 400 });
+    }
+    if (files.length > MAX_UPLOAD_FILES) {
+      return NextResponse.json({ error: "Troppe immagini in un solo upload." }, { status: 400 });
+    }
+
+    for (const file of files) {
+      if (!file.clientId || !isSafeClientId(file.clientId)) {
+        return NextResponse.json({ error: "Identificativo file non valido." }, { status: 400 });
+      }
+      const originalFilename = String(file.originalFilename || "").trim();
+      if (!originalFilename || originalFilename.length > MAX_FILENAME_LENGTH) {
+        return NextResponse.json({ error: "Nome file non valido." }, { status: 400 });
+      }
     }
 
     const admin = createAdminClient();

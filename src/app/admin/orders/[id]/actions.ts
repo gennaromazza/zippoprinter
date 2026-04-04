@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDepositAmountCents } from "@/lib/payments";
 import { revalidatePath } from "next/cache";
+import { isSameOriginRequest } from "@/lib/request-security";
 
 function revalidateOrderViews(orderId: string) {
   revalidatePath("/admin");
@@ -12,6 +13,9 @@ function revalidateOrderViews(orderId: string) {
 }
 
 export async function recordOrderPayment(orderId: string) {
+  if (!(await isSameOriginRequest())) {
+    return;
+  }
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
@@ -40,6 +44,9 @@ export async function recordOrderPayment(orderId: string) {
 }
 
 export async function recordOrderDeposit(orderId: string) {
+  if (!(await isSameOriginRequest())) {
+    return;
+  }
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
@@ -94,6 +101,9 @@ export async function recordOrderDeposit(orderId: string) {
 }
 
 export async function deleteOrderPhotos(orderId: string, storagePaths: string[]) {
+  if (!(await isSameOriginRequest())) {
+    return;
+  }
   const supabase = await createClient();
   const adminClient = createAdminClient();
   
@@ -124,6 +134,9 @@ export async function deleteOrderPhotos(orderId: string, storagePaths: string[])
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {
+  if (!(await isSameOriginRequest())) {
+    return;
+  }
   const supabase = await createClient();
   const updates: {
     status: string;

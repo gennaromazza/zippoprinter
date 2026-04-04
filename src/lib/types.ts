@@ -31,6 +31,99 @@ export interface Photographer {
   export_links_expiry_minutes?: number | null;
 }
 
+export type ConnectStatus =
+  | "not_connected"
+  | "pending"
+  | "connected"
+  | "restricted"
+  | "disabled";
+
+export interface TenantBillingAccount {
+  id: string;
+  photographer_id: string;
+  stripe_connect_account_id?: string | null;
+  stripe_customer_id?: string | null;
+  connect_status: ConnectStatus;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  onboarding_completed_at?: string | null;
+  legacy_checkout_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SubscriptionBillingMode = "monthly" | "yearly" | "lifetime";
+
+export interface SubscriptionPlan {
+  id: string;
+  code: string;
+  name: string;
+  billing_mode: SubscriptionBillingMode;
+  price_cents: number;
+  currency: string;
+  is_active: boolean;
+  feature_caps?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TenantSubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "suspended"
+  | "lifetime";
+
+export interface TenantSubscription {
+  id: string;
+  photographer_id: string;
+  plan_id?: string | null;
+  status: TenantSubscriptionStatus;
+  provider: "stripe" | "manual";
+  stripe_subscription_id?: string | null;
+  stripe_customer_id?: string | null;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  trial_end?: string | null;
+  cancel_at_period_end: boolean;
+  canceled_at?: string | null;
+  is_lifetime: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantEntitlement {
+  photographer_id: string;
+  can_accept_online_payments: boolean;
+  can_use_custom_domain: boolean;
+  max_monthly_orders?: number | null;
+  max_storage_gb?: number | null;
+  features?: Record<string, unknown>;
+  updated_at: string;
+}
+
+export type DomainVerificationStatus = "pending" | "verified" | "failed";
+export type DomainSslStatus = "pending" | "ready" | "failed";
+
+export interface TenantDomain {
+  id: string;
+  photographer_id: string;
+  domain: string;
+  verification_status: DomainVerificationStatus;
+  ssl_status: DomainSslStatus;
+  is_active: boolean;
+  dns_target?: string | null;
+  provider_record?: Record<string, unknown>;
+  last_error?: string | null;
+  verified_at?: string | null;
+  activated_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PrintFormat {
   id: string;
   photographer_id?: string | null;
@@ -72,6 +165,7 @@ export interface Order {
   amount_due_cents: number;
   stripe_payment_intent_id?: string | null;
   stripe_checkout_session_id?: string | null;
+  stripe_connected_account_id?: string | null;
   notes?: string | null;
   created_at: string;
   paid_at: string | null;
@@ -117,4 +211,71 @@ export interface OrderExportJob {
   started_at?: string | null;
   completed_at?: string | null;
   updated_at: string;
+}
+
+export interface PlatformAdmin {
+  id: string;
+  auth_user_id: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatformKPI {
+  generated_at: string;
+  tenants_total: number;
+  tenants_active: number;
+  tenants_trialing: number;
+  tenants_past_due: number;
+  tenants_suspended: number;
+  connect_connected: number;
+  connect_pending: number;
+  connect_restricted: number;
+  domains_active: number;
+  domains_pending: number;
+  domains_failed: number;
+  webhook_events_last_24h: number;
+  webhook_unprocessed_over_10m: number;
+}
+
+export interface PlatformTenantRow {
+  photographer_id: string;
+  name: string | null;
+  email: string;
+  created_at: string;
+  subscription_status: TenantSubscriptionStatus;
+  subscription_plan_code: string | null;
+  subscription_period_end: string | null;
+  connect_status: ConnectStatus | null;
+  connect_ready: boolean;
+  primary_domain: string | null;
+  domain_verification_status: DomainVerificationStatus | null;
+  domain_ssl_status: DomainSslStatus | null;
+  domain_active: boolean | null;
+  last_event_type: string | null;
+  last_event_at: string | null;
+}
+
+export type PlatformAlertSeverity = "critical" | "warning" | "info";
+export type PlatformAlertStatus = "open" | "acknowledged";
+
+export interface PlatformAlert {
+  alert_key: string;
+  photographer_id: string | null;
+  severity: PlatformAlertSeverity;
+  alert_type: string;
+  message: string;
+  created_at: string;
+  runbook_path: string;
+  status: PlatformAlertStatus;
+}
+
+export interface PlatformEvent {
+  event_id: string;
+  source: "stripe_order" | "stripe_platform" | "domain" | "manual";
+  event_type: string;
+  photographer_id: string | null;
+  created_at: string;
+  processed_at: string | null;
 }

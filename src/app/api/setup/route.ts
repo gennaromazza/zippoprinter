@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 interface SetupStep {
   step: string;
@@ -20,12 +19,38 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Errore sconosciuto";
 }
 
+function resolveInitSecret(request: Request, bodySecret?: string | null) {
+  const headerSecret = request.headers.get("x-init-secret");
+  const url = new URL(request.url);
+  const querySecret = url.searchParams.get("secret");
+  return (bodySecret || headerSecret || querySecret || "").trim();
+}
+
+function validateInitSecret(request: Request, bodySecret?: string | null) {
+  if (process.env.NODE_ENV === "production" && process.env.ENABLE_SETUP_ENDPOINTS !== "true") {
+    return { ok: false, error: "Not Found" };
+  }
+
+  const expected = (process.env.INIT_SECRET || "").trim();
+  if (!expected) {
+    return { ok: false, error: "INIT_SECRET mancante in ambiente." };
+  }
+
+  const provided = resolveInitSecret(request, bodySecret);
+  if (!provided || provided !== expected) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
+  return { ok: true };
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as { secret?: string };
   const { secret } = body;
-
-  if (secret !== process.env.INIT_SECRET && secret !== "setup-2024") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = validateInitSecret(request, secret);
+  if (!auth.ok) {
+    const status = auth.error === "Not Found" ? 404 : 401;
+    return NextResponse.json({ error: auth.error }, { status });
   }
 
   const adminClient = createAdminClient();
@@ -35,43 +60,54 @@ export async function POST(request: Request) {
   };
 
   try {
-    const { data: users } = await adminClient.auth.admin.listUsers();
-    const existingUser = users?.users.find(
-      (user) => user.email === "admin@studiofotograficozippoprinter.com"
-    );
+    const adminEmail =
+      (process.env.INIT_ADMIN_EMAIL || "admin@studiofotograficozippoprinter.com").trim();
+    const adminPassword = (process.env.INIT_ADMIN_PASSWORD || "").trim();
 
-    if (!existingUser) {
-      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
-        email: "admin@studiofotograficozippoprinter.com",
-        password: "ZippoPrinter2024!",
-        email_confirm: true,
-        user_metadata: {
-          name: "Studio Fotografico Zippo",
-        },
+    if (!adminPassword) {
+      results.steps.push({
+        step: "create_user",
+        success: false,
+        error: "INIT_ADMIN_PASSWORD mancante in ambiente.",
       });
+      results.success = false;
+    } else {
+      const { data: users } = await adminClient.auth.admin.listUsers();
+      const existingUser = users?.users.find((user) => user.email === adminEmail);
 
-      if (createError) {
-        results.steps.push({
-          step: "create_user",
-          success: false,
-          error: createError.message,
+      if (!existingUser) {
+        const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+          email: adminEmail,
+          password: adminPassword,
+          email_confirm: true,
+          user_metadata: {
+            name: "Studio Fotografico Zippo",
+          },
         });
-        results.success = false;
+
+        if (createError) {
+          results.steps.push({
+            step: "create_user",
+            success: false,
+            error: createError.message,
+          });
+          results.success = false;
+        } else {
+          results.steps.push({
+            step: "create_user",
+            success: true,
+            userId: newUser.user?.id,
+            email: newUser.user?.email,
+          });
+        }
       } else {
         results.steps.push({
           step: "create_user",
           success: true,
-          userId: newUser.user?.id,
-          email: newUser.user?.email,
+          message: "User already exists",
+          userId: existingUser.id,
         });
       }
-    } else {
-      results.steps.push({
-        step: "create_user",
-        success: true,
-        message: "User already exists",
-        userId: existingUser.id,
-      });
     }
   } catch (error: unknown) {
     results.steps.push({
@@ -128,8 +164,14 @@ export async function POST(request: Request) {
   return NextResponse.json(results);
 }
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(request: Request) {
+  const auth = validateInitSecret(request);
+  if (!auth.ok) {
+    const status = auth.error === "Not Found" ? 404 : 401;
+    return NextResponse.json({ error: auth.error }, { status });
+  }
+
+  const adminClient = createAdminClient();
 
   const results = {
     connection: "ok" as string | { error: string },
@@ -142,7 +184,9 @@ export async function GET() {
 
   for (const table of tables) {
     try {
-      const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
+      const { count, error } = await adminClient
+        .from(table)
+        .select("*", { count: "exact", head: true });
 
       results.tables[table] = {
         exists: !error,
@@ -158,7 +202,6 @@ export async function GET() {
   }
 
   try {
-    const adminClient = createAdminClient();
     const { data: buckets, error: storageError } = await adminClient.storage.listBuckets();
     const photosBucket = buckets?.find((bucket) => bucket.name === "photos");
     results.storage = {
@@ -173,7 +216,6 @@ export async function GET() {
   }
 
   try {
-    const adminClient = createAdminClient();
     const { data: users, error: authError } = await adminClient.auth.admin.listUsers();
     results.auth = {
       configured: !authError && (users?.users?.length ?? 0) > 0,

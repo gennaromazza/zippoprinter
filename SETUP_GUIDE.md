@@ -76,10 +76,26 @@ CREATE POLICY "Admin can delete photos" ON storage.objects
 - **Email**: admin@studiofotograficozippoprinter.com
 - **Password**: La password che hai impostato nel Passaggio 2
 
+## Variabili Ambiente Setup
+
+Per usare il setup automatico via `/setup` o `/api/setup` imposta:
+
+- `INIT_SECRET` (obbligatoria): segreto richiesto per diagnostica e setup
+- `INIT_ADMIN_PASSWORD` (obbligatoria): password admin iniziale
+- `INIT_ADMIN_EMAIL` (opzionale): email admin iniziale (default `admin@studiofotograficozippoprinter.com`)
+- `ENABLE_SETUP_ENDPOINTS` (opzionale): impostare `true` per abilitare gli endpoint in produzione
+- `NEXT_PUBLIC_ENABLE_SETUP` (opzionale): impostare `true` per mostrare la pagina `/setup`
+- `ENABLE_LEGACY_STRIPE_FALLBACK` (opzionale): fallback temporaneo checkout legacy
+- `STRIPE_PLATFORM_WEBHOOK_SECRET` (opzionale ma consigliata): webhook subscription SaaS
+- `VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID` (per custom domain BYOD)
+
 ## Verifica Setup
 
 Dopo aver completato tutti i passaggi, visita:
-`https://studiofotograficozippoprinter.com/api/diagnostic`
+`https://studiofotograficozippoprinter.com/api/diagnostic?secret=YOUR_INIT_SECRET`
+
+Allinea anche la migrazione SaaS:
+- `supabase/migrations/009_saas_multitenant_foundation_v2.sql`
 
 Dovresti vedere:
 - `connection`: "ok"

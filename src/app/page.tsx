@@ -1,12 +1,32 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { Camera, Sparkles } from "lucide-react";
 import { StorefrontPage } from "@/components/storefront-page";
 import { getPublicStudios, getStorefrontByPhotographerId } from "@/lib/photographers";
 import { getStudioHref } from "@/lib/studio-paths";
+import { resolveTenantByHost } from "@/lib/tenant-domains";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  const headerStore = await headers();
+  const incomingHost = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
+  const customDomainTenantId = incomingHost ? await resolveTenantByHost(incomingHost) : null;
+  if (customDomainTenantId) {
+    const storefront = await getStorefrontByPhotographerId(customDomainTenantId);
+    if (storefront) {
+      return (
+        <main className="min-h-screen px-4 pb-12 pt-4 md:px-8 md:pb-16 md:pt-6">
+          <StorefrontPage
+            photographer={storefront.photographer}
+            formats={storefront.formats}
+            stripeEnabled={Boolean(process.env.STRIPE_SECRET_KEY)}
+          />
+        </main>
+      );
+    }
+  }
+
   const studios = await getPublicStudios();
 
   if (studios.length === 0) {
@@ -74,7 +94,9 @@ export default async function HomePage() {
                 <h2 className="text-xl font-semibold tracking-tight text-foreground">
                   {studio.name || "Studio fotografico"}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{studio.email}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Vetrina pubblica attiva
+                </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
                     {studio.active_format_count} formati attivi

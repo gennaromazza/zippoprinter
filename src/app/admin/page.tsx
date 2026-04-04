@@ -7,6 +7,7 @@ import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { formatCurrency, formatShortDate, getOrderCustomerDisplayName, orderStatusMeta } from "@/lib/orders";
 import { getStudioHref } from "@/lib/studio-paths";
 import { getPaymentModeLabel } from "@/lib/payments";
+import { isSameOriginRequest } from "@/lib/request-security";
 import type { Order, Photographer } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,9 @@ export default async function AdminDashboard() {
 
   const signOut = async () => {
     "use server";
+    if (!(await isSameOriginRequest())) {
+      return;
+    }
     const serverSupabase = await createClient();
     await serverSupabase.auth.signOut();
     redirect("/login");

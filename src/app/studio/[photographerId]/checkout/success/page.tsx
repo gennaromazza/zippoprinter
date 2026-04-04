@@ -4,7 +4,7 @@ import { CheckCircle2, CreditCard, Store } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency } from "@/lib/orders";
 import { getOrderPaymentHeadline } from "@/lib/payments";
-import { getStripeClient } from "@/lib/stripe";
+import { getConnectedStripeClientByAccountId, getStripeClient } from "@/lib/stripe";
 import { getStorefrontByPhotographerId } from "@/lib/photographers";
 import type { Order } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,8 @@ export default async function CheckoutSuccessPage({
   }
 
   if (order && sessionId) {
-    const stripe = getStripeClient();
+    const stripe =
+      getConnectedStripeClientByAccountId(order.stripe_connected_account_id) || getStripeClient();
 
     if (stripe) {
       const session = await stripe.checkout.sessions.retrieve(sessionId);

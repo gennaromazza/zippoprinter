@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { createClient } from "@/lib/supabase/server";
+import { isSameOriginRequest } from "@/lib/request-security";
 import type { Photographer } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -18,6 +19,10 @@ function resolveExtension(type: string) {
 }
 
 export async function POST(request: Request) {
+  if (!(await isSameOriginRequest())) {
+    return NextResponse.json({ error: "Richiesta non valida." }, { status: 403 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

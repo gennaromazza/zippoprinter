@@ -1,5 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+function isPlatformDashboardEnabled() {
+  if (process.env.ENABLE_PLATFORM_DASHBOARD === "true") {
+    return true;
+  }
+  return process.env.NODE_ENV !== "production";
+}
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -34,10 +42,33 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isAdminRoute = request.nextUrl.pathname.startsWith("/admin");
+  const isPlatformRoute = request.nextUrl.pathname.startsWith("/platform");
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
 
-  if (isAdminRoute && !user && !isLoginRoute) {
+  if ((isAdminRoute || isPlatformRoute) && !user && !isLoginRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  if (isPlatformRoute) {
+    if (!isPlatformDashboardEnabled()) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    const adminClient = createAdminClient();
+    const { data: platformAdmin } = await adminClient
+      .from("platform_admins")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!platformAdmin?.id) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
   }
 
   if (isLoginRoute && user) {
@@ -48,5 +79,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/login"],
+  matcher: ["/admin/:path*", "/platform/:path*", "/login"],
 };
