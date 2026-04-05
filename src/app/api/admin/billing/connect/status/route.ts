@@ -22,11 +22,14 @@ export async function GET() {
 
   if (stripe && connectAccountId) {
     const account = await stripe.accounts.retrieve(connectAccountId);
-    const connectStatus = account.charges_enabled
-      ? "connected"
-      : account.details_submitted
-        ? "restricted"
-        : "pending";
+    const hasDisabledReason = Boolean(account.requirements?.disabled_reason);
+    const connectStatus = hasDisabledReason
+      ? "disabled"
+      : account.charges_enabled && account.payouts_enabled
+        ? "connected"
+        : account.details_submitted
+          ? "restricted"
+          : "pending";
 
     const admin = createAdminClient();
     await admin

@@ -3,10 +3,10 @@ import { headers } from "next/headers";
 export async function isSameOriginRequest() {
   const headerStore = await headers();
   const origin = headerStore.get("origin");
-  const host = headerStore.get("host");
+  const host = headerStore.get("x-forwarded-host") || headerStore.get("host");
 
   if (!origin || !host) {
-    return true;
+    return false;
   }
 
   try {

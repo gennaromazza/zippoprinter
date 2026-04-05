@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient, getStripeWebhookSecrets } from "@/lib/stripe";
-import { logBillingEvent } from "@/lib/tenant-billing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -264,6 +263,47 @@ function parseEventWithKnownSecrets(
   throw new Error("Webhook signature verification failed.");
 }
 
+function isDuplicateKeyError(error: { code?: string | null; message?: string | null }) {
+  const message = error.message || "";
+  return error.code === "23505" || message.includes("duplicate key");
+}
+
+async function shouldProcessEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  event: Stripe.Event
+) {
+  const { error } = await admin.from("billing_events").insert({
+    event_id: event.id,
+    source:
+      event.type.startsWith("checkout.") || event.type.startsWith("payment_intent.")
+        ? "stripe_order"
+        : "stripe_platform",
+    event_type: event.type,
+    payload: event.data.object as unknown as Record<string, unknown>,
+    processed_at: null,
+  });
+
+  if (!error) {
+    return true;
+  }
+
+  if (!isDuplicateKeyError(error)) {
+    throw new Error(error.message || "Errore registrazione evento webhook.");
+  }
+
+  const { data: existing, error: existingError } = await admin
+    .from("billing_events")
+    .select("processed_at")
+    .eq("event_id", event.id)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message || "Errore lettura stato evento webhook.");
+  }
+
+  return !existing?.processed_at;
+}
+
 export async function POST(request: Request) {
   const stripe = getStripeClient();
   if (!stripe) {
@@ -286,23 +326,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const logged = await logBillingEvent({
-    eventId: event.id,
-    source:
-      event.type.startsWith("checkout.") || event.type.startsWith("payment_intent.")
-        ? "stripe_order"
-        : "stripe_platform",
-    eventType: event.type,
-    payload: event.data.object as unknown as Record<string, unknown>,
-    processedAt: null,
-  });
-
-  if (logged.error) {
-    const message = logged.error.message || "";
-    if (message.includes("duplicate key")) {
+  const admin = createAdminClient();
+  try {
+    const shouldProcess = await shouldProcessEvent(admin, event);
+    if (!shouldProcess) {
       return NextResponse.json({ received: true });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Errore gestione idempotenza webhook.",
+      },
+      { status: 500 }
+    );
   }
 
   if (
@@ -349,7 +388,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const admin = createAdminClient();
   await admin
     .from("billing_events")
     .update({ processed_at: new Date().toISOString() })
