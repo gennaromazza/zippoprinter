@@ -10,6 +10,7 @@ import { getStudioHref } from "@/lib/studio-paths";
 import { getPaymentModeLabel } from "@/lib/payments";
 import {
   getContrastTextColor,
+  hexToRgba,
   normalizeHexColor,
 } from "@/lib/storefront-branding";
 import type {
@@ -219,6 +220,24 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
   }, [photographer]);
 
   const storefrontPrimaryContrast = getContrastTextColor(storefrontColorPrimary);
+  const logoPreviewPageStyle =
+    storefrontThemeEnabled && storefrontBgScope === "page" && storefrontBgUrl
+      ? {
+          backgroundImage: `linear-gradient(${hexToRgba(storefrontColorSecondary, storefrontBgOverlayOpacity / 100)}, ${hexToRgba(storefrontColorSecondary, storefrontBgOverlayOpacity / 100)}), url(${storefrontBgUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : undefined;
+  const logoPreviewHeaderStyle =
+    storefrontThemeEnabled && storefrontBgScope === "header" && storefrontBgUrl
+      ? {
+          backgroundImage: `linear-gradient(${hexToRgba(storefrontColorSecondary, storefrontBgOverlayOpacity / 100)}, ${hexToRgba(storefrontColorSecondary, storefrontBgOverlayOpacity / 100)}), url(${storefrontBgUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : undefined;
 
   const handleCopyLink = async () => {
     try {
@@ -624,6 +643,60 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                       Ultimo file caricato: {logoSizeInfo.width}x{logoSizeInfo.height}px, {formatMegabytes(logoSizeInfo.bytes)}
                     </p>
                   )}
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[1.4rem] border border-[color:var(--border)] bg-white/80 p-4" style={logoPreviewPageStyle}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Anteprima reale header cliente</p>
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-[color:var(--border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-foreground"
+                  >
+                    Apri pagina cliente
+                  </a>
+                </div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Questa simulazione mostra il logo come apparira nella testata della pagina ordini.
+                </p>
+
+                <div
+                  className={`mt-3 rounded-[1.6rem] border border-[color:var(--border)] px-4 py-4 ${
+                    storefrontThemeEnabled ? "bg-white/86 backdrop-blur-[2px]" : "bg-white"
+                  }`}
+                  style={logoPreviewHeaderStyle}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/30">
+                      {logoUrl ? (
+                        <Image
+                          src={logoUrl}
+                          alt="Anteprima reale logo su header cliente"
+                          fill
+                          unoptimized
+                          className="object-cover"
+                          style={{ objectPosition: `${logoPositionX}% ${logoPositionY}%` }}
+                          sizes="64px"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">
+                          {(photographer?.name || "S").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        {photographer?.name || "Il tuo studio fotografico"}
+                      </p>
+                      <p className="text-base font-semibold text-foreground">Ordina le tue stampe</p>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        {photographer?.custom_welcome_text ||
+                          "Compila i tuoi dati, carica le foto e conferma l'ordine in pochi passaggi."}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
