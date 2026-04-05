@@ -5,6 +5,14 @@ import { CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
 import type { ConnectStatus, TenantBillingAccount } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface ConnectStatusResponse {
   billingAccount: TenantBillingAccount | null;
@@ -68,6 +76,7 @@ export function StripeConnectCard() {
   const [billingAccount, setBillingAccount] = useState<TenantBillingAccount | null>(null);
   const [canAcceptOnlinePayments, setCanAcceptOnlinePayments] = useState(false);
   const [connectReady, setConnectReady] = useState(false);
+  const [showConnectGuide, setShowConnectGuide] = useState(false);
 
   const loadStatus = async () => {
     setSyncing(true);
@@ -162,7 +171,7 @@ export function StripeConnectCard() {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={handleConnect} disabled={connecting || loading}>
+          <Button type="button" onClick={() => setShowConnectGuide(true)} disabled={connecting || loading}>
             {connecting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -198,6 +207,73 @@ export function StripeConnectCard() {
           </p>
         )}
       </CardContent>
+
+      <Dialog open={showConnectGuide} onOpenChange={setShowConnectGuide}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Guida rapida collegamento Stripe</DialogTitle>
+            <DialogDescription>
+              Segui questi passaggi durante l&apos;onboarding per completare tutto al primo colpo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ol className="mt-4 space-y-3 text-sm leading-6 text-muted-foreground">
+            <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
+              <span className="font-semibold text-foreground">1. Crea o accedi all&apos;account Stripe</span>
+              <p className="mt-1">
+                Usa email dello studio e tieni aperta la casella di posta per eventuali verifiche immediate.
+              </p>
+            </li>
+            <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
+              <span className="font-semibold text-foreground">2. Inserisci dati attivita e titolare</span>
+              <p className="mt-1">
+                Compila ragione sociale, indirizzo, partita IVA/codice fiscale e dati del rappresentante legale.
+              </p>
+            </li>
+            <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
+              <span className="font-semibold text-foreground">3. Verifica identita</span>
+              <p className="mt-1">
+                Tieni pronti documento valido e, se richiesto, prova indirizzo o documenti aziendali.
+              </p>
+            </li>
+            <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
+              <span className="font-semibold text-foreground">4. Collega conto bancario</span>
+              <p className="mt-1">
+                Inserisci IBAN corretto per ricevere gli accrediti dei pagamenti online.
+              </p>
+            </li>
+            <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
+              <span className="font-semibold text-foreground">5. Torna qui e aggiorna stato</span>
+              <p className="mt-1">
+                Dopo la procedura, usa &quot;Aggiorna stato&quot;: quando vedi &quot;Pronto a incassare&quot; il checkout e attivo.
+              </p>
+            </li>
+          </ol>
+
+          <DialogFooter className="gap-2 sm:justify-end sm:space-x-0">
+            <Button type="button" variant="outline" onClick={() => setShowConnectGuide(false)} disabled={connecting}>
+              Chiudi
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setShowConnectGuide(false);
+                void handleConnect();
+              }}
+              disabled={connecting || loading}
+            >
+              {connecting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Reindirizzamento
+                </>
+              ) : (
+                "Continua su Stripe"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

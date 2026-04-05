@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StripeConnectCard } from "./stripe-connect-card";
+import { SubscriptionStatusPanel } from "./subscription-status-panel";
 
 const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const LOGO_MAX_BYTES = 4 * 1024 * 1024;
@@ -1057,6 +1058,8 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               </div>
             )}
           </div>
+
+          <SubscriptionStatusPanel />
 
           <div className="field-shell space-y-3">
             <Label htmlFor="welcome_text">Messaggio di benvenuto</Label>
