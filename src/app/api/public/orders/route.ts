@@ -29,6 +29,7 @@ const MAX_QUANTITY = 10;
 const MAX_MANIFEST_ITEMS = 50;
 const MAX_FILENAME_LENGTH = 120;
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+const MIN_PHONE_LENGTH = 6;
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -129,9 +130,13 @@ export async function POST(request: Request) {
       !customerEmail ||
       !customerFirstName ||
       !customerLastName ||
+      !customerPhone ||
       manifest.length === 0
     ) {
       return NextResponse.json({ error: "Dati ordine incompleti." }, { status: 400 });
+    }
+    if (customerPhone.replace(/\s+/g, "").length < MIN_PHONE_LENGTH) {
+      return NextResponse.json({ error: "Numero di telefono non valido." }, { status: 400 });
     }
     if (manifest.length > MAX_MANIFEST_ITEMS) {
       return NextResponse.json({ error: "Troppe immagini in un solo ordine." }, { status: 400 });

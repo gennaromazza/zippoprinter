@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ExternalLink, ImageIcon, LogOut, Package, Palette, Sparkles, Store } from "lucide-react";
+import { Download, ExternalLink, ImageIcon, LogOut, Package, Palette, Sparkles, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { formatCurrency, formatShortDate, getOrderCustomerDisplayName, orderStatusMeta } from "@/lib/orders";
@@ -89,6 +89,15 @@ export default async function AdminDashboard() {
                 <CardContent className="space-y-3">
                   <p className="text-sm leading-6 text-muted-foreground">Aggiorna nome studio, colore, listini, pagamento online e acconto.</p>
                   <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground"><Palette className="h-3.5 w-3.5" />Checkout per-tenant</div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href="/api/admin/customers/export">
+              <Card className="border-[color:var(--border)] bg-white hover:-translate-y-0.5">
+                <CardHeader><CardDescription>Marketing</CardDescription><CardTitle>Esporta mailing list clienti</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm leading-6 text-muted-foreground">Scarica un CSV con email e telefono dei clienti del tuo studio. Apribile direttamente in Excel.</p>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground"><Download className="h-3.5 w-3.5" />Download CSV</div>
                 </CardContent>
               </Card>
             </Link>

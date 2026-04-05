@@ -278,7 +278,8 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const canMoveToUpload =
     Boolean(customerEmail.trim()) &&
     Boolean(customerFirstName.trim()) &&
-    Boolean(customerLastName.trim());
+    Boolean(customerLastName.trim()) &&
+    Boolean(customerPhone.trim());
   const canMoveToFormat = photos.length > 0 && formats.length > 0;
   const canCheckout = photos.length > 0 && allFormatsAssigned;
   const paymentBlocked = paymentPlan.mode !== "pay_in_store" && !stripeEnabled;
@@ -625,7 +626,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
         <Panel
           title="Step 1"
           headline="Inserisci i tuoi dati"
-          note="Email, nome e cognome sono richiesti per registrare correttamente l'anagrafica cliente dello studio."
+          note="Email, nome, cognome e telefono sono richiesti per registrare correttamente l'anagrafica cliente dello studio."
           centered
         >
           <div className="mx-auto grid max-w-3xl gap-4">
@@ -640,6 +641,16 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
 
             <Field icon={<Mail className="h-4 w-4 text-muted-foreground" />} label="Email">
               <Input id="customer-email" type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="nome@email.com" required />
+            </Field>
+
+            <Field icon={<Phone className="h-4 w-4 text-muted-foreground" />} label="Telefono">
+              <Input
+                id="customer-phone"
+                value={customerPhone}
+                onChange={(event) => setCustomerPhone(event.target.value)}
+                placeholder="+39 333 1234567"
+                required
+              />
             </Field>
 
             <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-4">
@@ -953,14 +964,15 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                 <p><span className="font-semibold">Email:</span> {customerEmail}</p>
                 <p><span className="font-semibold">Nome:</span> {customerFirstName}</p>
                 <p><span className="font-semibold">Cognome:</span> {customerLastName}</p>
+                <p><span className="font-semibold">Telefono:</span> {customerPhone}</p>
                 <p><span className="font-semibold">Studio:</span> {photographer?.name || "Studio fotografico"}</p>
               </div>
 
               <div className="mt-5 field-shell space-y-2 p-4">
-                <Label htmlFor="customer-phone">Telefono opzionale</Label>
+                <Label htmlFor="customer-phone">Telefono obbligatorio</Label>
                 <div className="flex items-center gap-3">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <Input id="customer-phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="+39 333 1234567" />
+                  <Input id="customer-phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="+39 333 1234567" required />
                 </div>
               </div>
             </div>
@@ -969,7 +981,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             {errorMessage && <div className="mt-4"><ErrorBanner message={errorMessage} /></div>}
 
             <div className="mt-5">
-              <Button size="lg" className="w-full" disabled={loading || paymentBlocked} onClick={submitOrder}>
+              <Button size="lg" className="w-full" disabled={loading || paymentBlocked || !canMoveToUpload} onClick={submitOrder}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
