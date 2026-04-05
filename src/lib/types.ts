@@ -38,6 +38,8 @@ export type ConnectStatus =
   | "restricted"
   | "disabled";
 
+export type StudioAccessStatus = "active" | "temporarily_blocked" | "suspended";
+
 export interface TenantBillingAccount {
   id: string;
   photographer_id: string;
@@ -49,6 +51,10 @@ export interface TenantBillingAccount {
   details_submitted: boolean;
   onboarding_completed_at?: string | null;
   legacy_checkout_enabled: boolean;
+  access_status: StudioAccessStatus;
+  access_status_reason?: string | null;
+  access_status_updated_at: string;
+  access_status_updated_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -249,6 +255,7 @@ export interface PlatformTenantRow {
   subscription_period_end: string | null;
   connect_status: ConnectStatus | null;
   connect_ready: boolean;
+  access_status: StudioAccessStatus;
   primary_domain: string | null;
   domain_verification_status: DomainVerificationStatus | null;
   domain_ssl_status: DomainSslStatus | null;
@@ -278,4 +285,16 @@ export interface PlatformEvent {
   photographer_id: string | null;
   created_at: string;
   processed_at: string | null;
+}
+
+export interface PlatformSupportAction {
+  id: string;
+  photographer_id: string;
+  actor_user_id: string | null;
+  action_type: "password_reset_email" | "access_status_update";
+  outcome: "success" | "rate_limited" | "invalid_state" | "failed";
+  reason: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }

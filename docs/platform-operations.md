@@ -1,12 +1,13 @@
-# Operazioni Piattaforma (Dashboard Owner V1)
+# Operazioni Piattaforma (Dashboard Owner V2)
 
 ## Obiettivo
 
-L'area `/platform` e il pannello operativo del proprietario SaaS. In V1 resta read-only e serve per capire in fretta:
+L'area `/platform` e il pannello operativo del proprietario SaaS. In V2 combina osservabilita e supporto account:
 
 - dove ci sono rischi su studi/abbonamenti
 - se i pagamenti online sono pronti
 - se domini e webhook sono in salute
+- come intervenire su recupero accesso studio
 
 ## Schermate
 
@@ -19,6 +20,7 @@ L'area `/platform` e il pannello operativo del proprietario SaaS. In V1 resta re
   - stato operativo sintetico (`OK`, `Attenzione`, `Critico`)
 - `/platform/tenants/[id]`
   - dettaglio studio (abbonamento, Connect, domini, timeline eventi)
+  - supporto account: reset password via email + blocco/sblocco accesso
 - `/platform/events`
   - stream eventi piattaforma (billing/webhook)
 
@@ -58,6 +60,7 @@ L'area `/platform` e il pannello operativo del proprietario SaaS. In V1 resta re
    - stato pagamenti online
    - stato dominio
    - timeline eventi
+   - stato accesso studio e ultime azioni supporto
 4. Se serve approfondimento tecnico, usa i runbook:
    - `docs/runbooks/billing-lifecycle.md`
    - `docs/runbooks/domain-onboarding.md`

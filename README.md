@@ -31,7 +31,7 @@ ZippoPrinter e una web app per studi fotografici che raccoglie ordini di stampa 
 - `/admin/orders/[id]`
   dettaglio ordine con foto, cliente e azioni rapide.
 - `/admin/settings`
-  branding studio e gestione formati di stampa.
+  branding studio, gestione formati con sconti quantita guidati e dominio personalizzato (BYOD + condizioni acquisto/rinnovo).
 - `/setup`
   utilita di setup e diagnostica ambiente.
 - `/platform`
@@ -104,6 +104,19 @@ Variabili ambiente richieste:
 - `VERCEL_PROJECT_ID` project id Vercel del deployment
 - `VERCEL_TEAM_ID` (opzionale, se progetto in team)
 - `VERCEL_DOMAINS_CNAME_TARGET` (opzionale, default `cname.vercel-dns.com`)
+- `NEXT_PUBLIC_DOMAIN_PURCHASE_URL` (opzionale): URL pagina acquisto dominio
+- `NEXT_PUBLIC_DOMAIN_PURCHASE_PRICE_EUR` (opzionale): prezzo acquisto mostrato in UI
+- `NEXT_PUBLIC_DOMAIN_RENEWAL_PRICE_EUR` (opzionale): prezzo rinnovo annuale mostrato in UI
+- `OPENPROVIDER_API_USERNAME` per acquisto dominio in piattaforma
+- `OPENPROVIDER_API_PASSWORD` per acquisto dominio in piattaforma
+- `OPENPROVIDER_API_IP` (opzionale, default `0.0.0.0`)
+- `OPENPROVIDER_OWNER_HANDLE` handle contatto owner Openprovider
+- `OPENPROVIDER_ADMIN_HANDLE` (opzionale, fallback `OPENPROVIDER_OWNER_HANDLE`)
+- `OPENPROVIDER_TECH_HANDLE` (opzionale, fallback `OPENPROVIDER_OWNER_HANDLE`)
+- `OPENPROVIDER_BILLING_HANDLE` (opzionale, fallback `OPENPROVIDER_OWNER_HANDLE`)
+- `OPENPROVIDER_NS1` / `OPENPROVIDER_NS2` / `OPENPROVIDER_NS3` (opzionali)
+- `DOMAIN_MARKUP_PERCENT` (opzionale, default `25`)
+- `DOMAIN_MIN_MARGIN_EUR` (opzionale, default `3.00`)
 
 Nota Stripe:
 - per idempotenza webhook, creare una tabella `stripe_events` con `event_id` univoco (opzionale ma consigliato).
@@ -112,6 +125,7 @@ Nota Stripe:
 Nota sicurezza:
 - per protezione CSRF sulle Server Actions, le richieste devono provenire dallo stesso host (origin check).
 - esiste un rate limit in memoria sugli endpoint pubblici di upload/ordine (best-effort).
+- area admin disponibile solo sul dominio piattaforma; i domini personalizzati servono la vetrina cliente.
 
 Procedura rapida:
 
@@ -140,6 +154,7 @@ Migrazioni Supabase da avere allineate:
 - `supabase/migrations/008_print_format_quantity_pricing_and_csv.sql`
 - `supabase/migrations/009_saas_multitenant_foundation_v2.sql`
 - `supabase/migrations/010_platform_owner_dashboard_v1.sql`
+- `supabase/migrations/011_domain_commerce_orders.sql`
 
 ## Export ordini
 
@@ -147,6 +162,12 @@ Flusso operativo:
 
 - Dal dettaglio ordine `/admin/orders/[id]` usa `Scarica ordine ZIP`.
 - L'archivio viene preparato per formato e quantita copie in un unico file.
+
+## CSV Formati
+
+- Nuovo formato consigliato: colonna `discount_rules` con sintassi `quantita:tipo:valore`.
+- Esempio: `30:percent:10|50:fixed:0.40`.
+- Compatibilita legacy mantenuta: se `discount_rules` e vuota, viene letto `tier_prices`.
 
 ## Limiti attuali
 

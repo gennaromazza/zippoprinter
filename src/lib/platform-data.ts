@@ -6,6 +6,7 @@ import type {
   PlatformAlert,
   PlatformEvent,
   PlatformKPI,
+  PlatformSupportAction,
   PlatformTenantRow,
   TenantBillingAccount,
   TenantDomain,
@@ -53,6 +54,7 @@ export interface PlatformTenantDetail {
     resource_type: string;
     details: Record<string, unknown>;
   }>;
+  supportActions: PlatformSupportAction[];
 }
 
 export interface PlatformEventFilters {
@@ -267,6 +269,7 @@ export async function getPlatformTenantDetail(photographerId: string): Promise<P
     { data: domainsData },
     { data: eventsData },
     { data: auditData },
+    { data: supportActionsData },
   ] = await Promise.all([
     admin
       .from("platform_tenant_overview")
@@ -308,6 +311,12 @@ export async function getPlatformTenantDetail(photographerId: string): Promise<P
       .eq("photographer_id", photographerId)
       .order("created_at", { ascending: false })
       .limit(50),
+    admin
+      .from("platform_support_actions")
+      .select("*")
+      .eq("photographer_id", photographerId)
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
   return {
@@ -324,6 +333,7 @@ export async function getPlatformTenantDetail(photographerId: string): Promise<P
         resource_type: string;
         details: Record<string, unknown>;
       }> | null) ?? []),
+    supportActions: (supportActionsData as PlatformSupportAction[] | null) ?? [],
   };
 }
 

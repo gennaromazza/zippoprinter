@@ -71,7 +71,19 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  if (isAdminRoute && user) {
+    const accessStatus = await getStudioAccessStatus(user.id);
+    if (accessStatus && accessStatus !== "active") {
+      return NextResponse.redirect(new URL("/login?blocked=1", request.url));
+    }
+  }
+
   if (isLoginRoute && user) {
+    const accessStatus = await getStudioAccessStatus(user.id);
+    if (accessStatus && accessStatus !== "active") {
+      return supabaseResponse;
+    }
+
     return NextResponse.redirect(new URL("/admin", request.url));
   }
 
@@ -81,3 +93,23 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: ["/admin/:path*", "/platform/:path*", "/login"],
 };
+  async function getStudioAccessStatus(userId: string) {
+    const adminClient = createAdminClient();
+    const { data: photographer } = await adminClient
+      .from("photographers")
+      .select("id")
+      .eq("auth_user_id", userId)
+      .maybeSingle();
+
+    if (!photographer?.id) {
+      return null;
+    }
+
+    const { data: billing } = await adminClient
+      .from("tenant_billing_accounts")
+      .select("access_status")
+      .eq("photographer_id", photographer.id)
+      .maybeSingle();
+
+    return billing?.access_status || "active";
+  }

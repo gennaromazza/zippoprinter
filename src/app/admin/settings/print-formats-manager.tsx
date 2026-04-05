@@ -1,11 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/orders";
-import { formatTierInput, formatTierSummary, parseTierInput } from "@/lib/pricing";
+import {
+  discountRulesToTiers,
+  formatTierSummary,
+  parseDiscountRulesInput,
+  parseTierInput,
+  tiersToDiscountRules,
+  type DiscountRuleDraft,
+} from "@/lib/pricing";
 import { isMissingQuantityPricingSchemaError } from "@/lib/schema-compat";
 import type { PrintFormat } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,9 +61,9 @@ function detectCsvDelimiter(headerLine: string): "," | ";" {
 
 function downloadCsvTemplate() {
   const csv = [
-    "name,width_cm,height_cm,price_eur,tier_prices",
-    '"10x15 cm",10,15,3.00,"10:2.70;20:2.50"',
-    '"13x18 cm",13,18,5.00,"10:4.60;25:4.20"',
+    "name,width_cm,height_cm,price_eur,discount_rules,tier_prices",
+    '"10x15 cm",10,15,3.00,"30:percent:10|50:fixed:0.40",""',
+    '"13x18 cm",13,18,5.00,"20:fixed:0.50|40:percent:15",""',
   ].join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -78,6 +85,47 @@ function splitInChunks<T>(items: T[], size: number) {
   return chunks;
 }
 
+function getDefaultRule(): DiscountRuleDraft {
+  return { min_quantity: 10, mode: "percent", value: 10 };
+}
+
+function safeParsePriceToCents(value: string) {
+  const parsed = Number.parseFloat(value.replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return Math.round(parsed * 100);
+}
+
+function formatRulePreview(basePriceCents: number, rule: DiscountRuleDraft) {
+  if (!Number.isFinite(basePriceCents) || basePriceCents <= 0) {
+    return "-";
+  }
+
+  const baseEur = basePriceCents / 100;
+  let finalEur = baseEur;
+  if (rule.mode === "percent") {
+    finalEur = baseEur * (1 - rule.value / 100);
+  } else {
+    finalEur = baseEur - rule.value;
+  }
+
+  return finalEur > 0 ? `${finalEur.toFixed(2)} EUR` : "non valido";
+}
+
+function parseCsvRules(input: {
+  discountRulesRaw: string;
+  tierPricesRaw: string;
+  basePriceCents: number;
+}) {
+  if (input.discountRulesRaw.trim()) {
+    const discountRules = parseDiscountRulesInput(input.discountRulesRaw);
+    return discountRulesToTiers(input.basePriceCents, discountRules);
+  }
+
+  return parseTierInput(input.tierPricesRaw);
+}
+
 export function PrintFormatsManager({
   formats,
   photographerId,
@@ -91,13 +139,73 @@ export function PrintFormatsManager({
   const [csvLoading, setCsvLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [csvMessage, setCsvMessage] = useState("");
+  const [priceInput, setPriceInput] = useState("");
+  const [discountRules, setDiscountRules] = useState<DiscountRuleDraft[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
+  const basePriceCents = useMemo(() => safeParsePriceToCents(priceInput), [priceInput]);
+  const rulesValidationError = useMemo(() => {
+    if (!discountRules.length) {
+      return "";
+    }
+
+    if (!basePriceCents) {
+      return "Inserisci prima un prezzo base valido.";
+    }
+
+    try {
+      discountRulesToTiers(basePriceCents, discountRules);
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : "Regole sconto non valide.";
+    }
+  }, [basePriceCents, discountRules]);
+
+  const openCreateForm = () => {
+    setEditing(null);
+    setIsAdding(true);
+    setPriceInput("");
+    setDiscountRules([]);
+    setMessage("");
+  };
+
+  const openEditForm = (format: PrintFormat) => {
+    setEditing(format);
+    setIsAdding(false);
+    setPriceInput((format.price_cents / 100).toFixed(2));
+    setDiscountRules(tiersToDiscountRules(format.quantity_price_tiers, format.price_cents));
+    setMessage("");
+  };
+
   const resetForm = () => {
     setEditing(null);
     setIsAdding(false);
+    setPriceInput("");
+    setDiscountRules([]);
+  };
+
+  const updateRule = (
+    index: number,
+    patch: Partial<DiscountRuleDraft>
+  ) => {
+    setDiscountRules((current) =>
+      current.map((rule, ruleIndex) => {
+        if (ruleIndex !== index) {
+          return rule;
+        }
+        return { ...rule, ...patch };
+      })
+    );
+  };
+
+  const removeRule = (index: number) => {
+    setDiscountRules((current) => current.filter((_, ruleIndex) => ruleIndex !== index));
+  };
+
+  const addRule = () => {
+    setDiscountRules((current) => [...current, getDefaultRule()]);
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -107,12 +215,10 @@ export function PrintFormatsManager({
 
     try {
       const formData = new FormData(event.currentTarget);
-      const priceEuros = Number.parseFloat(String(formData.get("price") || "").replace(",", "."));
       const widthCm = Number.parseFloat(String(formData.get("width") || "").replace(",", "."));
       const heightCm = Number.parseFloat(String(formData.get("height") || "").replace(",", "."));
-      const tiers = parseTierInput(String(formData.get("tier_prices") || ""));
 
-      if (!Number.isFinite(priceEuros) || priceEuros <= 0) {
+      if (!basePriceCents) {
         throw new Error("Prezzo non valido.");
       }
 
@@ -120,11 +226,13 @@ export function PrintFormatsManager({
         throw new Error("Larghezza/altezza non valide.");
       }
 
+      const tiers = discountRulesToTiers(basePriceCents, discountRules);
+
       const payload = {
         name: String(formData.get("name") || "").trim(),
         width_cm: widthCm,
         height_cm: heightCm,
-        price_cents: Math.round(priceEuros * 100),
+        price_cents: basePriceCents,
         quantity_price_tiers: tiers,
       };
 
@@ -204,6 +312,7 @@ export function PrintFormatsManager({
       const widthIndex = getIndex("width_cm", "width", "larghezza");
       const heightIndex = getIndex("height_cm", "height", "altezza");
       const priceIndex = getIndex("price_eur", "price", "unit_price_eur", "prezzo");
+      const discountRulesIndex = getIndex("discount_rules", "discounts", "regole_sconto");
       const tiersIndex = getIndex("tier_prices", "quantity_tiers", "prezzi_quantita");
 
       if (nameIndex < 0 || widthIndex < 0 || heightIndex < 0 || priceIndex < 0) {
@@ -230,6 +339,7 @@ export function PrintFormatsManager({
         const widthCm = Number.parseFloat((row[widthIndex] || "").replace(",", "."));
         const heightCm = Number.parseFloat((row[heightIndex] || "").replace(",", "."));
         const priceEur = Number.parseFloat((row[priceIndex] || "").replace(",", "."));
+        const discountRulesRaw = discountRulesIndex >= 0 ? row[discountRulesIndex] || "" : "";
         const tiersRaw = tiersIndex >= 0 ? row[tiersIndex] || "" : "";
 
         if (!name || !Number.isFinite(widthCm) || !Number.isFinite(heightCm) || !Number.isFinite(priceEur)) {
@@ -238,8 +348,13 @@ export function PrintFormatsManager({
         }
 
         let tiers = [] as ReturnType<typeof parseTierInput>;
+        const basePriceCentsForRow = Math.round(priceEur * 100);
         try {
-          tiers = parseTierInput(tiersRaw);
+          tiers = parseCsvRules({
+            discountRulesRaw,
+            tierPricesRaw: tiersRaw,
+            basePriceCents: basePriceCentsForRow,
+          });
         } catch (error) {
           rowErrors.push(
             `Riga ${lineNumber}: ${
@@ -254,7 +369,7 @@ export function PrintFormatsManager({
           name,
           width_cm: widthCm,
           height_cm: heightCm,
-          price_cents: Math.round(priceEur * 100),
+          price_cents: basePriceCentsForRow,
           quantity_price_tiers: tiers,
           sort_order: formats.length + importPayload.length,
         });
@@ -304,7 +419,7 @@ export function PrintFormatsManager({
           </div>
           <div className="flex flex-wrap gap-2">
             {!isAdding && (
-              <Button onClick={() => setIsAdding(true)}>
+              <Button onClick={openCreateForm}>
                 <Plus className="h-4 w-4" />
                 Aggiungi formato
               </Button>
@@ -331,7 +446,10 @@ export function PrintFormatsManager({
       </CardHeader>
       <CardContent className="space-y-6">
         {(isAdding || editing) && (
-          <form onSubmit={handleSave} className="grid gap-4 rounded-[1.8rem] border border-[color:var(--border)] bg-white/70 p-5 md:grid-cols-5">
+          <form
+            onSubmit={handleSave}
+            className="grid gap-4 rounded-[1.8rem] border border-[color:var(--border)] bg-white/70 p-5 md:grid-cols-5"
+          >
             <div className="field-shell space-y-2 md:col-span-2">
               <Label htmlFor="name">Nome formato</Label>
               <Input
@@ -371,25 +489,84 @@ export function PrintFormatsManager({
                 name="price"
                 type="number"
                 step="0.01"
-                defaultValue={editing ? (editing.price_cents / 100).toFixed(2) : ""}
+                value={priceInput}
+                onChange={(event) => setPriceInput(event.target.value)}
                 placeholder="3.00"
                 required
               />
             </div>
-            <div className="field-shell space-y-2 md:col-span-5">
-              <Label htmlFor="tier_prices">Prezzi per quantita (opzionale)</Label>
-              <Input
-                id="tier_prices"
-                name="tier_prices"
-                defaultValue={editing ? formatTierInput(editing.quantity_price_tiers) : ""}
-                placeholder="10:2.70;20:2.50"
-              />
-              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Formato: minQuantita:prezzoUnitario; es. 10:2.70;20:2.50
-              </p>
+
+            <div className="md:col-span-5 space-y-3 rounded-[1.2rem] border border-[color:var(--border)] bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Sconti quantita (opzionale)</Label>
+                  <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                    Da quantita - tipo sconto - valore. Esempio: da 30 copie paghi meno.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" onClick={addRule}>
+                  <Plus className="h-4 w-4" />
+                  Aggiungi soglia
+                </Button>
+              </div>
+
+              {discountRules.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nessuna soglia impostata: verra applicato sempre il prezzo base.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {discountRules.map((rule, index) => (
+                    <div key={`${index}-${rule.min_quantity}`} className="grid gap-2 rounded-xl border border-[color:var(--border)] p-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+                      <Input
+                        type="number"
+                        min={2}
+                        step={1}
+                        value={rule.min_quantity}
+                        onChange={(event) =>
+                          updateRule(index, { min_quantity: Number.parseInt(event.target.value || "0", 10) || 0 })
+                        }
+                        placeholder="Da quantita"
+                      />
+                      <select
+                        value={rule.mode}
+                        onChange={(event) => updateRule(index, { mode: event.target.value as DiscountRuleDraft["mode"] })}
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="percent">Percentuale (%)</option>
+                        <option value="fixed">Importo fisso (EUR)</option>
+                      </select>
+                      <Input
+                        type="number"
+                        min={0.01}
+                        step={rule.mode === "percent" ? 0.1 : 0.01}
+                        value={rule.value}
+                        onChange={(event) =>
+                          updateRule(index, { value: Number.parseFloat(event.target.value || "0") || 0 })
+                        }
+                        placeholder={rule.mode === "percent" ? "Es. 10" : "Es. 0.40"}
+                      />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeRule(index)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+
+                      <p className="md:col-span-4 text-xs text-muted-foreground">
+                        Da {rule.min_quantity} copie, prezzo finale per copia: {formatRulePreview(basePriceCents || 0, rule)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {rulesValidationError ? (
+                <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                  {rulesValidationError}
+                </p>
+              ) : null}
             </div>
+
             <div className="flex flex-wrap gap-3 md:col-span-5">
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={loading || Boolean(rulesValidationError)}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -409,16 +586,24 @@ export function PrintFormatsManager({
         )}
 
         {message && (
-          <div className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium ${
-            message.startsWith("Errore") ? "border-rose-300 bg-rose-50 text-rose-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"
-          }`}>
+          <div
+            className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium ${
+              message.startsWith("Errore")
+                ? "border-rose-300 bg-rose-50 text-rose-900"
+                : "border-emerald-300 bg-emerald-50 text-emerald-900"
+            }`}
+          >
             {message}
           </div>
         )}
         {csvMessage && (
-          <div className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium whitespace-pre-line ${
-            csvMessage.startsWith("Errore") ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-300 bg-sky-50 text-sky-900"
-          }`}>
+          <div
+            className={`rounded-[1.4rem] border px-4 py-3 text-sm font-medium whitespace-pre-line ${
+              csvMessage.startsWith("Errore")
+                ? "border-rose-300 bg-rose-50 text-rose-900"
+                : "border-sky-300 bg-sky-50 text-sky-900"
+            }`}
+          >
             {csvMessage}
           </div>
         )}
@@ -463,7 +648,7 @@ export function PrintFormatsManager({
                   <span className="rounded-full bg-[rgba(47,106,102,0.08)] px-3 py-1 text-sm font-semibold text-[color:var(--accent)]">
                     {formatCurrency(format.price_cents)}
                   </span>
-                  <Button variant="ghost" size="icon" onClick={() => setEditing(format)}>
+                  <Button variant="ghost" size="icon" onClick={() => openEditForm(format)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button

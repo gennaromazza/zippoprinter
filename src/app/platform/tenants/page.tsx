@@ -50,6 +50,7 @@ export default async function PlatformTenantsPage({
                 <th className="px-3 py-2">Studio</th>
                 <th className="px-3 py-2">Stato operativo</th>
                 <th className="px-3 py-2">Abbonamento</th>
+                <th className="px-3 py-2">Accesso studio</th>
                 <th className="px-3 py-2">Piano</th>
                 <th className="px-3 py-2">Pagamenti online</th>
                 <th className="px-3 py-2">Dominio</th>
@@ -59,7 +60,7 @@ export default async function PlatformTenantsPage({
             </thead>
             <tbody>
               {data.items.map((row) => {
-                const health = getHealth(row.subscription_status, row.connect_ready, row.primary_domain);
+                const health = getHealth(row.subscription_status, row.connect_ready, row.primary_domain, row.access_status);
                 return (
                   <tr key={row.photographer_id} className="border-b border-[color:var(--border)]/60">
                     <td className="px-3 py-3">
@@ -68,6 +69,7 @@ export default async function PlatformTenantsPage({
                     </td>
                     <td className="px-3 py-3"><HealthBadge level={health.level} label={health.label} /></td>
                     <td className="px-3 py-3">{row.subscription_status}</td>
+                    <td className="px-3 py-3">{row.access_status}</td>
                     <td className="px-3 py-3">{row.subscription_plan_code || "-"}</td>
                     <td className="px-3 py-3">{row.connect_ready ? "Pronti" : (row.connect_status || "Non collegato")}</td>
                     <td className="px-3 py-3">{row.primary_domain || "Nessuno"}</td>
@@ -102,7 +104,11 @@ export default async function PlatformTenantsPage({
   );
 }
 
-function getHealth(subscriptionStatus: string, connectReady: boolean, primaryDomain: string | null) {
+function getHealth(subscriptionStatus: string, connectReady: boolean, primaryDomain: string | null, accessStatus: string) {
+  if (accessStatus === "temporarily_blocked" || accessStatus === "suspended") {
+    return { level: "critical" as const, label: "Critico" };
+  }
+
   if (subscriptionStatus === "past_due" || subscriptionStatus === "suspended") {
     return { level: "critical" as const, label: "Critico" };
   }

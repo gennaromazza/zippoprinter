@@ -14,6 +14,27 @@ export interface PublicStudioSummary extends Photographer {
   active_format_count: number;
 }
 
+async function ensurePhotographerHasActiveAccess(
+  admin: ReturnType<typeof createAdminClient>,
+  photographer: Photographer | null
+) {
+  if (!photographer) {
+    return null;
+  }
+
+  const { data: billingData } = await admin
+    .from("tenant_billing_accounts")
+    .select("access_status")
+    .eq("photographer_id", photographer.id)
+    .maybeSingle();
+
+  if (billingData?.access_status && billingData.access_status !== "active") {
+    return null;
+  }
+
+  return photographer;
+}
+
 export const getCurrentPhotographerForUser = cache(
   async (user: Pick<User, "id" | "email">): Promise<Photographer | null> => {
     const admin = createAdminClient();
@@ -30,7 +51,7 @@ export const getCurrentPhotographerForUser = cache(
     );
 
     if (linkedPhotographer) {
-      return linkedPhotographer;
+      return ensurePhotographerHasActiveAccess(admin, linkedPhotographer);
     }
 
     if (user.email) {
@@ -48,13 +69,16 @@ export const getCurrentPhotographerForUser = cache(
             .select("*")
             .maybeSingle();
 
-          return (claimedByEmail || {
-            ...emailMatchedPhotographer,
-            auth_user_id: user.id,
-          }) as Photographer;
+          return ensurePhotographerHasActiveAccess(
+            admin,
+            (claimedByEmail || {
+              ...emailMatchedPhotographer,
+              auth_user_id: user.id,
+            }) as Photographer
+          );
         }
 
-        return emailMatchedPhotographer;
+        return ensurePhotographerHasActiveAccess(admin, emailMatchedPhotographer);
       }
     }
 
@@ -65,7 +89,7 @@ export const getCurrentPhotographerForUser = cache(
     const [onlyPhotographer] = photographers;
 
     if (!Object.prototype.hasOwnProperty.call(onlyPhotographer, "auth_user_id")) {
-      return onlyPhotographer;
+      return ensurePhotographerHasActiveAccess(admin, onlyPhotographer);
     }
 
     if (onlyPhotographer.auth_user_id) {
@@ -80,10 +104,13 @@ export const getCurrentPhotographerForUser = cache(
       .select("*")
       .maybeSingle();
 
-    return (claimedPhotographer || {
-      ...onlyPhotographer,
-      auth_user_id: user.id,
-    }) as Photographer;
+    return ensurePhotographerHasActiveAccess(
+      admin,
+      (claimedPhotographer || {
+        ...onlyPhotographer,
+        auth_user_id: user.id,
+      }) as Photographer
+    );
   }
 );
 

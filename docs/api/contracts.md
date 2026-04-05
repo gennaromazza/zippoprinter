@@ -33,6 +33,14 @@
 - `DELETE /api/admin/domains/:id`
   - removes domain from tenant and attempts provider cleanup.
 
+- `POST /api/admin/domains/purchase/quote`
+  - body: `{ domain, periodYears }`.
+  - checks availability and returns provider cost + sale price + margin.
+
+- `POST /api/admin/domains/purchase`
+  - body: `{ domain, periodYears, acknowledged }`.
+  - buys domain via Openprovider, creates `domain_purchase_orders`, and connects domain to tenant project.
+
 ## Public Checkout
 
 - `POST /api/public/orders`
@@ -77,6 +85,19 @@
     - domains
     - recent billing events
     - recent audit logs
+    - recent support actions
+
+- `POST /api/platform/tenants/:id/support/password-reset`
+  - body: `{ reason }` (5-300 chars).
+  - sends studio password-reset email through Supabase.
+  - includes anti-abuse guardrail (cooldown + owner hourly limit).
+
+- `POST /api/platform/tenants/:id/support/access-status`
+  - body: `{ nextStatus, reason }`.
+  - allowed transitions:
+    - `active -> temporarily_blocked`
+    - `temporarily_blocked -> active`
+    - `suspended -> active`
 
 - `GET /api/platform/alerts`
   - alert feed filters:
@@ -102,3 +123,5 @@ Error contract (all owner APIs):
   }
 }
 ```
+
+Possible status codes for owner APIs: `401`, `403`, `404`, `422`, `429`, `500`.

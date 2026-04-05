@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [blocked] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    const params = new URLSearchParams(window.location.search);
+    return params.get("blocked") === "1";
+  });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -83,6 +90,11 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
+              {blocked ? (
+                <p className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+                  Accesso studio temporaneamente limitato. Contatta il supporto piattaforma per lo sblocco.
+                </p>
+              ) : null}
               <div className="field-shell space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input

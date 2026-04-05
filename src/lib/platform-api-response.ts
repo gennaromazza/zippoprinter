@@ -14,7 +14,7 @@ export function createRequestId() {
 
 export function platformApiError(
   requestId: string,
-  status: 401 | 403 | 404 | 422 | 500,
+  status: 401 | 403 | 404 | 422 | 429 | 500,
   message: string,
   details?: Record<string, unknown>
 ) {

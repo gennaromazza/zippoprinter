@@ -1,5 +1,13 @@
 import type { PrintFormat, QuantityPriceTier } from "./types";
 
+export type DiscountMode = "fixed" | "percent";
+
+export interface DiscountRuleDraft {
+  min_quantity: number;
+  mode: DiscountMode;
+  value: number;
+}
+
 function toPositiveInteger(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -91,6 +99,144 @@ export function parseTierInput(raw: string): QuantityPriceTier[] {
   }
 
   return tiers.sort((a, b) => a.min_quantity - b.min_quantity);
+}
+
+function roundToTwo(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function parsePositiveNumber(raw: string) {
+  const parsed = Number.parseFloat((raw || "").replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+export function tiersToDiscountRules(
+  tiers: unknown,
+  basePriceCents: number
+): DiscountRuleDraft[] {
+  const parsed = parseQuantityPriceTiers(tiers);
+  if (!parsed.length || !Number.isFinite(basePriceCents) || basePriceCents <= 0) {
+    return [];
+  }
+
+  return parsed.map((tier) => {
+    const discountCents = Math.max(basePriceCents - tier.unit_price_cents, 0);
+    return {
+      min_quantity: tier.min_quantity,
+      mode: "fixed" as const,
+      value: roundToTwo(discountCents / 100),
+    };
+  });
+}
+
+export function discountRulesToTiers(
+  basePriceCents: number,
+  rules: DiscountRuleDraft[]
+): QuantityPriceTier[] {
+  if (!Number.isFinite(basePriceCents) || basePriceCents <= 0) {
+    throw new Error("Prezzo base non valido.");
+  }
+
+  const seen = new Set<number>();
+  const tiers: QuantityPriceTier[] = [];
+
+  for (const rule of rules) {
+    const minQuantity = Math.round(rule.min_quantity);
+    const mode = rule.mode;
+    const value = Number(rule.value);
+
+    if (!Number.isFinite(minQuantity) || minQuantity <= 1) {
+      throw new Error("Ogni regola deve avere quantita minima maggiore di 1.");
+    }
+
+    if (seen.has(minQuantity)) {
+      throw new Error(`Soglia duplicata: ${minQuantity}.`);
+    }
+    seen.add(minQuantity);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`Valore sconto non valido per soglia ${minQuantity}.`);
+    }
+
+    let finalUnitPriceCents: number;
+    if (mode === "percent") {
+      if (value >= 100) {
+        throw new Error(`Percentuale non valida per soglia ${minQuantity}.`);
+      }
+      finalUnitPriceCents = Math.round(basePriceCents * (1 - value / 100));
+    } else {
+      finalUnitPriceCents = basePriceCents - Math.round(value * 100);
+    }
+
+    if (finalUnitPriceCents <= 0) {
+      throw new Error(`Prezzo finale non valido per soglia ${minQuantity}.`);
+    }
+
+    if (finalUnitPriceCents > basePriceCents) {
+      throw new Error(`La soglia ${minQuantity} genera un prezzo superiore al prezzo base.`);
+    }
+
+    tiers.push({
+      min_quantity: minQuantity,
+      unit_price_cents: finalUnitPriceCents,
+    });
+  }
+
+  return tiers.sort((a, b) => a.min_quantity - b.min_quantity);
+}
+
+export function parseDiscountRulesInput(raw: string): DiscountRuleDraft[] {
+  const normalized = raw.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const chunks = normalized
+    .split(/[|\n]+/g)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  const rules: DiscountRuleDraft[] = [];
+  const seen = new Set<number>();
+
+  for (const chunk of chunks) {
+    const [minRaw, modeRaw, valueRaw] = chunk.split(":").map((part) => part.trim());
+    const minQuantity = toPositiveInteger(minRaw);
+    const mode = (modeRaw || "").toLowerCase();
+    const value = parsePositiveNumber(valueRaw || "");
+
+    if (!minQuantity || minQuantity <= 1) {
+      throw new Error(`Soglia non valida: "${chunk}".`);
+    }
+
+    if (seen.has(minQuantity)) {
+      throw new Error(`Soglia duplicata: ${minQuantity}.`);
+    }
+    seen.add(minQuantity);
+
+    if ((mode !== "fixed" && mode !== "percent") || !value) {
+      throw new Error(
+        `Regola non valida: "${chunk}". Usa formato quantita:tipo:valore (es. 30:percent:10).`
+      );
+    }
+
+    rules.push({
+      min_quantity: minQuantity,
+      mode: mode as DiscountMode,
+      value,
+    });
+  }
+
+  return rules.sort((a, b) => a.min_quantity - b.min_quantity);
+}
+
+export function formatDiscountRulesInput(rules: DiscountRuleDraft[]) {
+  return rules
+    .map((rule) => `${rule.min_quantity}:${rule.mode}:${roundToTwo(rule.value)}`)
+    .join("|");
 }
 
 export function formatTierInput(tiers: unknown) {

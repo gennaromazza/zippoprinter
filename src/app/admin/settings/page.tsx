@@ -6,6 +6,8 @@ import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import type { Photographer, PrintFormat } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { PhotographerSettings } from "./photographer-settings";
+import { DomainSettingsCard } from "./domain-settings-card";
+import { StripeConnectCard } from "./stripe-connect-card";
 import { PrintFormatsManager } from "./print-formats-manager";
 
 export default async function SettingsPage() {
@@ -58,6 +60,8 @@ export default async function SettingsPage() {
 
         <main className="mt-6 space-y-6">
           <PhotographerSettings photographer={photographer} />
+          <StripeConnectCard />
+          <DomainSettingsCard />
           <PrintFormatsManager formats={printFormats} photographerId={photographer?.id || ""} />
         </main>
       </div>
