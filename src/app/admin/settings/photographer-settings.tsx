@@ -8,7 +8,16 @@ import { createClient } from "@/lib/supabase/client";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getStudioHref } from "@/lib/studio-paths";
 import { getPaymentModeLabel } from "@/lib/payments";
-import type { Photographer } from "@/lib/types";
+import {
+  getContrastTextColor,
+  normalizeHexColor,
+} from "@/lib/storefront-branding";
+import type {
+  Photographer,
+  StorefrontBgScope,
+  StorefrontCtaAlign,
+  StorefrontLayoutPreset,
+} from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +29,12 @@ const LOGO_MIN_WIDTH = 300;
 const LOGO_MIN_HEIGHT = 300;
 const LOGO_MAX_WIDTH = 4000;
 const LOGO_MAX_HEIGHT = 4000;
+const BG_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const BG_MAX_BYTES = 6 * 1024 * 1024;
+const BG_MIN_WIDTH = 1200;
+const BG_MIN_HEIGHT = 600;
+const BG_MAX_WIDTH = 7000;
+const BG_MAX_HEIGHT = 7000;
 
 function clampPercent(value: number | null | undefined) {
   if (!Number.isFinite(value)) {
@@ -61,7 +76,16 @@ function isMissingPublicProfileSchemaError(message: string | undefined | null) {
     message.includes("website_url") ||
     message.includes("instagram_url") ||
     message.includes("logo_position_x") ||
-    message.includes("logo_position_y")
+    message.includes("logo_position_y") ||
+    message.includes("storefront_theme_enabled") ||
+    message.includes("storefront_layout_preset") ||
+    message.includes("storefront_bg_image_url") ||
+    message.includes("storefront_bg_scope") ||
+    message.includes("storefront_bg_overlay_opacity") ||
+    message.includes("storefront_color_primary") ||
+    message.includes("storefront_color_secondary") ||
+    message.includes("storefront_color_text") ||
+    message.includes("storefront_cta_align")
   );
 }
 
@@ -73,9 +97,46 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoMessage, setLogoMessage] = useState("");
   const [logoSizeInfo, setLogoSizeInfo] = useState<{ width: number; height: number; bytes: number } | null>(null);
+  const [storefrontBgUrl, setStorefrontBgUrl] = useState(
+    photographer?.storefront_bg_image_url || ""
+  );
+  const [storefrontBgUploading, setStorefrontBgUploading] = useState(false);
+  const [storefrontBgMessage, setStorefrontBgMessage] = useState("");
+  const [storefrontBgSizeInfo, setStorefrontBgSizeInfo] = useState<{
+    width: number;
+    height: number;
+    bytes: number;
+  } | null>(null);
+  const storefrontBgFileInputRef = useRef<HTMLInputElement>(null);
   const [logoPositionX, setLogoPositionX] = useState(clampPercent(photographer?.logo_position_x));
   const [logoPositionY, setLogoPositionY] = useState(clampPercent(photographer?.logo_position_y));
   const [brandColor, setBrandColor] = useState(photographer?.brand_color || "#8f5d2c");
+  const [storefrontThemeEnabled, setStorefrontThemeEnabled] = useState(
+    Boolean(photographer?.storefront_theme_enabled)
+  );
+  const [storefrontLayoutPreset, setStorefrontLayoutPreset] = useState<StorefrontLayoutPreset>(
+    (photographer?.storefront_layout_preset as StorefrontLayoutPreset) || "classic"
+  );
+  const [storefrontBgScope, setStorefrontBgScope] = useState<StorefrontBgScope>(
+    (photographer?.storefront_bg_scope as StorefrontBgScope) || "header"
+  );
+  const [storefrontBgOverlayOpacity, setStorefrontBgOverlayOpacity] = useState(
+    Number.isFinite(photographer?.storefront_bg_overlay_opacity)
+      ? Math.min(100, Math.max(0, Math.round(photographer?.storefront_bg_overlay_opacity as number)))
+      : 35
+  );
+  const [storefrontColorPrimary, setStorefrontColorPrimary] = useState(
+    normalizeHexColor(photographer?.storefront_color_primary || photographer?.brand_color, "#D97942")
+  );
+  const [storefrontColorSecondary, setStorefrontColorSecondary] = useState(
+    normalizeHexColor(photographer?.storefront_color_secondary, "#F3E4D7")
+  );
+  const [storefrontColorText, setStorefrontColorText] = useState(
+    normalizeHexColor(photographer?.storefront_color_text, "#2B211C")
+  );
+  const [storefrontCtaAlign, setStorefrontCtaAlign] = useState<StorefrontCtaAlign>(
+    (photographer?.storefront_cta_align as StorefrontCtaAlign) || "left"
+  );
   const [paymentMode, setPaymentMode] = useState(photographer?.payment_mode || "pay_in_store");
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
   const [depositValue, setDepositValue] = useState(() => {
@@ -103,7 +164,30 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     setLogoPositionY(clampPercent(photographer?.logo_position_y));
     setLogoSizeInfo(null);
     setLogoMessage("");
+    setStorefrontBgUrl(photographer?.storefront_bg_image_url || "");
+    setStorefrontBgSizeInfo(null);
+    setStorefrontBgMessage("");
+    setStorefrontThemeEnabled(Boolean(photographer?.storefront_theme_enabled));
+    setStorefrontLayoutPreset(
+      (photographer?.storefront_layout_preset as StorefrontLayoutPreset) || "classic"
+    );
+    setStorefrontBgScope((photographer?.storefront_bg_scope as StorefrontBgScope) || "header");
+    setStorefrontBgOverlayOpacity(
+      Number.isFinite(photographer?.storefront_bg_overlay_opacity)
+        ? Math.min(100, Math.max(0, Math.round(photographer?.storefront_bg_overlay_opacity as number)))
+        : 35
+    );
+    setStorefrontColorPrimary(
+      normalizeHexColor(photographer?.storefront_color_primary || photographer?.brand_color, "#D97942")
+    );
+    setStorefrontColorSecondary(
+      normalizeHexColor(photographer?.storefront_color_secondary, "#F3E4D7")
+    );
+    setStorefrontColorText(normalizeHexColor(photographer?.storefront_color_text, "#2B211C"));
+    setStorefrontCtaAlign((photographer?.storefront_cta_align as StorefrontCtaAlign) || "left");
   }, [photographer]);
+
+  const storefrontPrimaryContrast = getContrastTextColor(storefrontColorPrimary);
 
   const handleCopyLink = async () => {
     try {
@@ -170,6 +254,15 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       instagram_url: String(formData.get("instagram_url") || "").trim() || null,
       brand_color: formData.get("brand_color"),
       custom_welcome_text: formData.get("welcome_text"),
+      storefront_theme_enabled: storefrontThemeEnabled,
+      storefront_layout_preset: storefrontLayoutPreset,
+      storefront_bg_image_url: storefrontBgUrl.trim() || null,
+      storefront_bg_scope: storefrontBgScope,
+      storefront_bg_overlay_opacity: Math.min(100, Math.max(0, storefrontBgOverlayOpacity)),
+      storefront_color_primary: normalizeHexColor(storefrontColorPrimary, "#D97942"),
+      storefront_color_secondary: normalizeHexColor(storefrontColorSecondary, "#F3E4D7"),
+      storefront_color_text: normalizeHexColor(storefrontColorText, "#2B211C"),
+      storefront_cta_align: storefrontCtaAlign,
     };
 
     let { error } = await supabase
@@ -195,7 +288,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     if (error) {
       if (isMissingPublicProfileSchemaError(error.message)) {
         setMessage(
-          "Errore: schema non aggiornato. Esegui le migration 006_public_studio_profile_links.sql e 007_logo_positioning_controls.sql."
+          "Errore: schema non aggiornato. Esegui le migration 006_public_studio_profile_links.sql, 007_logo_positioning_controls.sql e 013_storefront_branding_v1.sql."
         );
       } else {
         setMessage("Errore nel salvataggio delle impostazioni.");
@@ -275,6 +368,82 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       setLogoMessage(error instanceof Error ? error.message : "Errore durante l'upload logo.");
     } finally {
       setLogoUploading(false);
+    }
+  };
+
+  const handleStorefrontBackgroundFileSelect = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setStorefrontBgMessage("");
+
+    if (!BG_ALLOWED_TYPES.includes(file.type)) {
+      setStorefrontBgMessage("Errore: formato non supportato. Usa JPG, PNG o WEBP.");
+      return;
+    }
+
+    if (file.size > BG_MAX_BYTES) {
+      setStorefrontBgMessage(`Errore: il file supera ${formatMegabytes(BG_MAX_BYTES)}.`);
+      return;
+    }
+
+    let dimensions: { width: number; height: number };
+    try {
+      dimensions = await readImageDimensions(file);
+    } catch (error) {
+      setStorefrontBgMessage(
+        error instanceof Error ? error.message : "Errore lettura immagine sfondo."
+      );
+      return;
+    }
+
+    if (
+      dimensions.width < BG_MIN_WIDTH ||
+      dimensions.height < BG_MIN_HEIGHT ||
+      dimensions.width > BG_MAX_WIDTH ||
+      dimensions.height > BG_MAX_HEIGHT
+    ) {
+      setStorefrontBgMessage(
+        `Errore: risoluzione non valida (${dimensions.width}x${dimensions.height}px). Usa uno sfondo tra ${BG_MIN_WIDTH}x${BG_MIN_HEIGHT}px e ${BG_MAX_WIDTH}x${BG_MAX_HEIGHT}px.`
+      );
+      return;
+    }
+
+    setStorefrontBgUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/admin/settings/storefront-background-upload", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as { error?: string; url?: string };
+
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || "Upload sfondo non riuscito.");
+      }
+
+      setStorefrontBgUrl(payload.url);
+      setStorefrontBgSizeInfo({
+        width: dimensions.width,
+        height: dimensions.height,
+        bytes: file.size,
+      });
+      setStorefrontBgMessage(
+        "Sfondo caricato con successo. Salva per applicarlo alla pagina cliente."
+      );
+    } catch (error) {
+      setStorefrontBgMessage(
+        error instanceof Error ? error.message : "Errore durante l'upload sfondo."
+      );
+    } finally {
+      setStorefrontBgUploading(false);
     }
   };
 
@@ -486,6 +655,245 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                   onChange={(event) => setBrandColor(event.target.value)}
                   className="font-mono uppercase"
                 />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[1.6rem] border border-[color:var(--border)] bg-white/70 p-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Aspetto pagina cliente</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Personalizza hero, sfondo e palette della pagina ordine.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-foreground">
+                <input
+                  type="checkbox"
+                  checked={storefrontThemeEnabled}
+                  onChange={(event) => setStorefrontThemeEnabled(event.target.checked)}
+                />
+                Attiva nuovo branding
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="field-shell space-y-2">
+                <Label htmlFor="storefront_layout_preset">Preset layout hero</Label>
+                <select
+                  id="storefront_layout_preset"
+                  name="storefront_layout_preset"
+                  value={storefrontLayoutPreset}
+                  onChange={(event) =>
+                    setStorefrontLayoutPreset(event.target.value as StorefrontLayoutPreset)
+                  }
+                  className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                  disabled={!storefrontThemeEnabled}
+                >
+                  <option value="classic">Classic</option>
+                  <option value="hero_left">Hero sinistra</option>
+                  <option value="hero_center">Hero centrato</option>
+                  <option value="hero_split">Hero split</option>
+                </select>
+              </div>
+
+              <div className="field-shell space-y-2">
+                <Label htmlFor="storefront_cta_align">Allineamento CTA</Label>
+                <select
+                  id="storefront_cta_align"
+                  name="storefront_cta_align"
+                  value={storefrontCtaAlign}
+                  onChange={(event) => setStorefrontCtaAlign(event.target.value as StorefrontCtaAlign)}
+                  className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                  disabled={!storefrontThemeEnabled}
+                >
+                  <option value="left">Sinistra</option>
+                  <option value="center">Centro</option>
+                  <option value="right">Destra</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[1.4rem] border border-[color:var(--border)] bg-[color:var(--muted)]/25 p-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <Label htmlFor="storefront-bg-upload">Sfondo storefront</Label>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    JPG/PNG/WEBP fino a {formatMegabytes(BG_MAX_BYTES)}. Minimo {BG_MIN_WIDTH}x{BG_MIN_HEIGHT}px.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    ref={storefrontBgFileInputRef}
+                    id="storefront-bg-upload"
+                    type="file"
+                    accept={BG_ALLOWED_TYPES.join(",")}
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleStorefrontBackgroundFileSelect(event);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={storefrontBgUploading || !storefrontThemeEnabled}
+                    onClick={() => storefrontBgFileInputRef.current?.click()}
+                  >
+                    {storefrontBgUploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Carica sfondo"
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="field-shell space-y-2">
+                  <Label htmlFor="storefront_bg_image_url">URL sfondo</Label>
+                  <Input
+                    id="storefront_bg_image_url"
+                    name="storefront_bg_image_url"
+                    type="url"
+                    value={storefrontBgUrl}
+                    onChange={(event) => setStorefrontBgUrl(event.target.value)}
+                    placeholder="https://.../background.jpg"
+                    disabled={!storefrontThemeEnabled}
+                  />
+                </div>
+
+                <div className="field-shell space-y-2">
+                  <Label htmlFor="storefront_bg_scope">Dove applicare lo sfondo</Label>
+                  <select
+                    id="storefront_bg_scope"
+                    name="storefront_bg_scope"
+                    value={storefrontBgScope}
+                    onChange={(event) => setStorefrontBgScope(event.target.value as StorefrontBgScope)}
+                    className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                    disabled={!storefrontThemeEnabled}
+                  >
+                    <option value="header">Solo header hero</option>
+                    <option value="page">Pagina intera</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4 field-shell space-y-2">
+                <Label htmlFor="storefront_bg_overlay_opacity">
+                  Overlay leggibilita ({storefrontBgOverlayOpacity}%)
+                </Label>
+                <input
+                  id="storefront_bg_overlay_opacity"
+                  name="storefront_bg_overlay_opacity"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={storefrontBgOverlayOpacity}
+                  onChange={(event) =>
+                    setStorefrontBgOverlayOpacity(
+                      Math.min(100, Math.max(0, Number.parseInt(event.target.value, 10) || 0))
+                    )
+                  }
+                  className="w-full accent-primary"
+                  disabled={!storefrontThemeEnabled}
+                />
+              </div>
+
+              {storefrontBgSizeInfo ? (
+                <p className="mt-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                  Ultimo sfondo: {storefrontBgSizeInfo.width}x{storefrontBgSizeInfo.height}px,{" "}
+                  {formatMegabytes(storefrontBgSizeInfo.bytes)}
+                </p>
+              ) : null}
+              {storefrontBgMessage ? (
+                <p
+                  className={`mt-3 text-sm font-medium ${
+                    storefrontBgMessage.startsWith("Errore")
+                      ? "text-red-700"
+                      : "text-emerald-700"
+                  }`}
+                >
+                  {storefrontBgMessage}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <div className="field-shell space-y-3">
+                <Label htmlFor="storefront_color_primary">Colore primario</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="storefront_color_primary"
+                    name="storefront_color_primary"
+                    type="color"
+                    value={storefrontColorPrimary}
+                    onChange={(event) => setStorefrontColorPrimary(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                  />
+                  <Input
+                    value={storefrontColorPrimary}
+                    onChange={(event) => setStorefrontColorPrimary(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              <div className="field-shell space-y-3">
+                <Label htmlFor="storefront_color_secondary">Colore secondario</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="storefront_color_secondary"
+                    name="storefront_color_secondary"
+                    type="color"
+                    value={storefrontColorSecondary}
+                    onChange={(event) => setStorefrontColorSecondary(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                  />
+                  <Input
+                    value={storefrontColorSecondary}
+                    onChange={(event) => setStorefrontColorSecondary(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              <div className="field-shell space-y-3">
+                <Label htmlFor="storefront_color_text">Colore testo</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="storefront_color_text"
+                    name="storefront_color_text"
+                    type="color"
+                    value={storefrontColorText}
+                    onChange={(event) => setStorefrontColorText(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                  />
+                  <Input
+                    value={storefrontColorText}
+                    onChange={(event) => setStorefrontColorText(event.target.value)}
+                    disabled={!storefrontThemeEnabled}
+                    className="font-mono uppercase"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-[color:var(--border)] bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Anteprima contrasto CTA
+              </p>
+              <div className="mt-2 inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold"
+                style={{
+                  backgroundColor: storefrontColorPrimary,
+                  color: storefrontPrimaryContrast,
+                }}
+              >
+                Pulsante primario
               </div>
             </div>
           </div>

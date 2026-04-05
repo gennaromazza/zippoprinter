@@ -31,7 +31,7 @@ ZippoPrinter e una web app per studi fotografici che raccoglie ordini di stampa 
 - `/admin/orders/[id]`
   dettaglio ordine con foto, cliente e azioni rapide.
 - `/admin/settings`
-  branding studio, gestione formati con sconti quantita guidati e dominio personalizzato (BYOD + condizioni acquisto/rinnovo).
+  branding studio, tema storefront cliente (preset hero + sfondo + palette), gestione formati con sconti quantita guidati e dominio personalizzato (BYOD + condizioni acquisto/rinnovo).
 - `/setup`
   utilita di setup e diagnostica ambiente.
 - `/platform`
@@ -117,6 +117,8 @@ Variabili ambiente richieste:
 - `OPENPROVIDER_NS1` / `OPENPROVIDER_NS2` / `OPENPROVIDER_NS3` (opzionali)
 - `DOMAIN_MARKUP_PERCENT` (opzionale, default `25`)
 - `DOMAIN_MIN_MARGIN_EUR` (opzionale, default `3.00`)
+- `PHOTO_RETENTION_DAYS` (opzionale, default `10`): giorni dopo cui le foto di ordini `completed` vengono eliminate automaticamente
+- `CRON_SECRET` (consigliato): secret bearer per invocare in sicurezza gli endpoint cron interni
 
 Nota Stripe:
 - per idempotenza webhook, creare una tabella `stripe_events` con `event_id` univoco (opzionale ma consigliato).
@@ -126,6 +128,7 @@ Nota sicurezza:
 - per protezione CSRF sulle Server Actions, le richieste devono provenire dallo stesso host (origin check).
 - esiste un rate limit in memoria sugli endpoint pubblici di upload/ordine (best-effort).
 - area admin disponibile solo sul dominio piattaforma; i domini personalizzati servono la vetrina cliente.
+- retention automatica foto: cron giornaliero (`/api/cron/photo-retention`) che elimina file+order_items degli ordini `completed` oltre soglia (`PHOTO_RETENTION_DAYS`).
 
 Procedura rapida:
 
@@ -155,6 +158,7 @@ Migrazioni Supabase da avere allineate:
 - `supabase/migrations/009_saas_multitenant_foundation_v2.sql`
 - `supabase/migrations/010_platform_owner_dashboard_v1.sql`
 - `supabase/migrations/011_domain_commerce_orders.sql`
+- `supabase/migrations/013_storefront_branding_v1.sql`
 
 ## Export ordini
 

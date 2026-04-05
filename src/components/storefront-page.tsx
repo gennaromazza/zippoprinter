@@ -1,6 +1,8 @@
 import Image from "next/image";
+import type { CSSProperties } from "react";
 import { AtSign, Globe, MessageCircle, Sparkles } from "lucide-react";
 import { StorefrontUploadShell } from "@/components/storefront-upload-shell";
+import { hexToRgba, resolveStorefrontTheme } from "@/lib/storefront-branding";
 import type { Photographer, PrintFormat } from "@/lib/types";
 
 interface StorefrontPageProps {
@@ -20,6 +22,26 @@ function toPublicUrl(raw: string | null | undefined) {
   return `https://${value}`;
 }
 
+function getCtaAlignClass(align: string) {
+  if (align === "center") {
+    return "items-center text-center";
+  }
+  if (align === "right") {
+    return "items-end text-right";
+  }
+  return "items-start text-left";
+}
+
+function getHeroGridClass(preset: string) {
+  if (preset === "hero_center") {
+    return "flex flex-col items-center text-center gap-5";
+  }
+  if (preset === "hero_left") {
+    return "flex flex-col gap-5";
+  }
+  return "flex flex-col gap-5 md:flex-row md:items-start md:justify-between";
+}
+
 export function StorefrontPage({ photographer, formats, stripeEnabled }: StorefrontPageProps) {
   const studioName = photographer.name || "Il tuo studio fotografico";
   const logoPositionX = Number.isFinite(photographer.logo_position_x)
@@ -36,12 +58,50 @@ export function StorefrontPage({ photographer, formats, stripeEnabled }: Storefr
   const websiteHref = toPublicUrl(photographer.website_url);
   const instagramHref = toPublicUrl(photographer.instagram_url);
   const hasPublicContacts = Boolean(photographer.phone || whatsappHref || websiteHref || instagramHref);
+  const theme = resolveStorefrontTheme(photographer);
+
+  const containerVars = theme.enabled
+    ? ({
+        "--primary": theme.primary,
+        "--ring": hexToRgba(theme.primary, 0.28),
+        "--accent": theme.secondary,
+        "--secondary": theme.secondary,
+        "--foreground": theme.text,
+        "--muted": hexToRgba(theme.secondary, 0.72),
+        "--border": hexToRgba(theme.text, 0.16),
+      } as CSSProperties)
+    : undefined;
+
+  const pageBackgroundStyle: CSSProperties | undefined =
+    theme.enabled && theme.bgScope === "page" && theme.bgImageUrl
+      ? {
+          backgroundImage: `linear-gradient(${hexToRgba(theme.secondary, theme.overlayOpacity / 100)}, ${hexToRgba(theme.secondary, theme.overlayOpacity / 100)}), url(${theme.bgImageUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : undefined;
+
+  const headerBackgroundStyle: CSSProperties | undefined =
+    theme.enabled && theme.bgScope === "header" && theme.bgImageUrl
+      ? {
+          backgroundImage: `linear-gradient(${hexToRgba(theme.secondary, theme.overlayOpacity / 100)}, ${hexToRgba(theme.secondary, theme.overlayOpacity / 100)}), url(${theme.bgImageUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : undefined;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 md:space-y-5">
-      <header className="rounded-[2rem] border border-[color:var(--border)] bg-white px-5 py-5 shadow-[var(--shadow-sm)] md:px-7">
-        <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-          <div className="flex items-start gap-4">
+    <div className="mx-auto max-w-6xl space-y-4 md:space-y-5" style={{ ...containerVars, ...pageBackgroundStyle }}>
+      <header
+        className={`rounded-[2rem] border border-[color:var(--border)] px-5 py-5 shadow-[var(--shadow-sm)] md:px-7 ${
+          theme.enabled ? "bg-white/86 backdrop-blur-[2px]" : "bg-white"
+        }`}
+        style={headerBackgroundStyle}
+      >
+        <div className={getHeroGridClass(theme.layoutPreset)}>
+          <div className={`flex items-start gap-4 ${theme.layoutPreset === "hero_center" ? "justify-center" : ""}`}>
             <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/30">
               {photographer.logo_url ? (
                 <Image
@@ -59,7 +119,7 @@ export function StorefrontPage({ photographer, formats, stripeEnabled }: Storefr
                 </div>
               )}
             </div>
-            <div className="space-y-2">
+            <div className={`space-y-2 ${theme.layoutPreset === "hero_center" ? "text-center" : ""}`}>
               <p className="section-kicker">
                 <Sparkles className="h-3.5 w-3.5" />
                 {studioName}
@@ -71,17 +131,26 @@ export function StorefrontPage({ photographer, formats, stripeEnabled }: Storefr
             </div>
           </div>
 
-          <div className="grid gap-3 md:w-[25rem]">
-            <div className="rounded-[1.4rem] border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-3">
+          <div className={`grid gap-3 ${theme.layoutPreset === "hero_split" ? "md:w-[25rem]" : "w-full"} ${theme.layoutPreset === "hero_center" ? "max-w-2xl" : ""}`}>
+            <div className={`rounded-[1.4rem] border border-[color:var(--border)] bg-[color:var(--muted)]/55 px-4 py-3 ${getCtaAlignClass(theme.ctaAlign)}`}>
               <p className="text-sm font-semibold text-foreground">Contatti studio</p>
               {hasPublicContacts ? (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className={`mt-3 flex flex-wrap gap-2 ${theme.ctaAlign === "center" ? "justify-center" : theme.ctaAlign === "right" ? "justify-end" : ""}`}>
                   {whatsappHref && (
                     <a
                       href={whatsappHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-foreground"
+                      className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em]"
+                      style={
+                        theme.enabled
+                          ? {
+                              backgroundColor: theme.primary,
+                              color: theme.primaryContrast,
+                              borderColor: "transparent",
+                            }
+                          : undefined
+                      }
                     >
                       <MessageCircle className="h-3.5 w-3.5" />
                       WhatsApp
@@ -121,7 +190,7 @@ export function StorefrontPage({ photographer, formats, stripeEnabled }: Storefr
                 </p>
               )}
             </div>
-            <p className="section-kicker">
+            <p className={`section-kicker ${theme.ctaAlign === "center" ? "justify-center" : theme.ctaAlign === "right" ? "justify-end" : ""}`}>
               Percorso guidato: dati cliente, caricamento foto, formati, checkout.
             </p>
           </div>

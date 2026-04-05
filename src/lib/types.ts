@@ -3,6 +3,14 @@ export interface QuantityPriceTier {
   unit_price_cents: number;
 }
 
+export type StorefrontLayoutPreset =
+  | "classic"
+  | "hero_left"
+  | "hero_center"
+  | "hero_split";
+export type StorefrontBgScope = "header" | "page";
+export type StorefrontCtaAlign = "left" | "center" | "right";
+
 export interface Photographer {
   id: string;
   email: string;
@@ -17,6 +25,15 @@ export interface Photographer {
   instagram_url?: string | null;
   brand_color: string | null;
   custom_welcome_text: string | null;
+  storefront_theme_enabled?: boolean | null;
+  storefront_layout_preset?: StorefrontLayoutPreset | null;
+  storefront_bg_image_url?: string | null;
+  storefront_bg_scope?: StorefrontBgScope | null;
+  storefront_bg_overlay_opacity?: number | null;
+  storefront_color_primary?: string | null;
+  storefront_color_secondary?: string | null;
+  storefront_color_text?: string | null;
+  storefront_cta_align?: StorefrontCtaAlign | null;
   payment_mode?: PaymentMode | null;
   deposit_type?: DepositType | null;
   deposit_value?: number | null;
