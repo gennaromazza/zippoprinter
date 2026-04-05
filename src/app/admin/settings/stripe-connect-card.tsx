@@ -17,6 +17,7 @@ interface ConnectStatusResponse {
 
 interface ConnectStartResponse {
   url?: string;
+  setupUrl?: string;
   error?: string;
 }
 
@@ -100,10 +101,18 @@ export function StripeConnectCard() {
     try {
       const response = await fetch("/api/admin/billing/connect/start", { method: "POST" });
       const payload = await parseJsonSafe<ConnectStartResponse>(response);
-      if (!response.ok || !payload.url) {
+      if (payload.url) {
+        window.location.href = payload.url;
+        return;
+      }
+      if (payload.setupUrl) {
+        window.location.href = payload.setupUrl;
+        return;
+      }
+      if (!response.ok) {
         throw new Error(payload.error || "Impossibile avviare onboarding Stripe.");
       }
-      window.location.href = payload.url;
+      throw new Error("Impossibile avviare onboarding Stripe.");
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : "Errore connessione Stripe.");
       setConnecting(false);

@@ -8,6 +8,14 @@ import { writeAuditLog } from "@/lib/tenant-billing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function getStripeConnectSetupUrl() {
+  const key = process.env.STRIPE_SECRET_KEY || "";
+  if (key.startsWith("sk_test_")) {
+    return "https://dashboard.stripe.com/test/connect";
+  }
+  return "https://dashboard.stripe.com/connect";
+}
+
 function getOriginFromRequest(request: Request) {
   const forwardedProto = request.headers.get("x-forwarded-proto");
   const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
@@ -88,6 +96,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       url: accountLink.url,
+      setupUrl: getStripeConnectSetupUrl(),
       connectAccountId,
       connectReady: false,
     });
@@ -98,6 +107,7 @@ export async function POST(request: Request) {
           error instanceof Error
             ? error.message
             : "Impossibile avviare onboarding Stripe.",
+        setupUrl: getStripeConnectSetupUrl(),
       },
       { status: 500 }
     );

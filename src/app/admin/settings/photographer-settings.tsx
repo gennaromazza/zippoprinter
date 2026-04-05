@@ -19,9 +19,18 @@ import type {
   StorefrontLayoutPreset,
 } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { StripeConnectCard } from "./stripe-connect-card";
 
 const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const LOGO_MAX_BYTES = 4 * 1024 * 1024;
@@ -138,6 +147,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     (photographer?.storefront_cta_align as StorefrontCtaAlign) || "left"
   );
   const [paymentMode, setPaymentMode] = useState(photographer?.payment_mode || "pay_in_store");
+  const [stripeModalOpen, setStripeModalOpen] = useState(false);
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
   const [depositValue, setDepositValue] = useState(() => {
     if (!photographer?.deposit_value) return "30";
@@ -157,6 +167,26 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     const timeout = window.setTimeout(() => setCopied(false), 1800);
     return () => window.clearTimeout(timeout);
   }, [copied]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const connectState = params.get("connect");
+    if (connectState !== "return" && connectState !== "refresh") {
+      return;
+    }
+
+    setPaymentMode("online_full");
+    setStripeModalOpen(true);
+
+    params.delete("connect");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", nextUrl);
+  }, []);
 
   useEffect(() => {
     setLogoUrl(photographer?.logo_url || "");
@@ -447,6 +477,11 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     }
   };
 
+  const handleSelectOnlineFull = () => {
+    setPaymentMode("online_full");
+    setStripeModalOpen(true);
+  };
+
   return (
     <Card className="glass-panel">
       <CardHeader>
@@ -672,228 +707,245 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                   type="checkbox"
                   checked={storefrontThemeEnabled}
                   onChange={(event) => setStorefrontThemeEnabled(event.target.checked)}
+                  aria-expanded={storefrontThemeEnabled}
+                  aria-controls="storefront-branding-panel"
                 />
                 Attiva nuovo branding
               </label>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="field-shell space-y-2">
-                <Label htmlFor="storefront_layout_preset">Preset layout hero</Label>
-                <select
-                  id="storefront_layout_preset"
-                  name="storefront_layout_preset"
-                  value={storefrontLayoutPreset}
-                  onChange={(event) =>
-                    setStorefrontLayoutPreset(event.target.value as StorefrontLayoutPreset)
-                  }
-                  className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
-                  disabled={!storefrontThemeEnabled}
-                >
-                  <option value="classic">Classic</option>
-                  <option value="hero_left">Hero sinistra</option>
-                  <option value="hero_center">Hero centrato</option>
-                  <option value="hero_split">Hero split</option>
-                </select>
-              </div>
+            <div
+              id="storefront-branding-panel"
+              className={`grid overflow-hidden transition-all duration-300 ease-out ${
+                storefrontThemeEnabled
+                  ? "mt-4 grid-rows-[1fr] opacity-100"
+                  : "mt-0 grid-rows-[0fr] opacity-0"
+              }`}
+            >
+              <div className="min-h-0 space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="field-shell space-y-2">
+                    <Label htmlFor="storefront_layout_preset">Preset layout hero</Label>
+                    <select
+                      id="storefront_layout_preset"
+                      name="storefront_layout_preset"
+                      value={storefrontLayoutPreset}
+                      onChange={(event) =>
+                        setStorefrontLayoutPreset(event.target.value as StorefrontLayoutPreset)
+                      }
+                      className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                      disabled={!storefrontThemeEnabled}
+                    >
+                      <option value="classic">Classic</option>
+                      <option value="hero_left">Hero sinistra</option>
+                      <option value="hero_center">Hero centrato</option>
+                      <option value="hero_split">Hero split</option>
+                    </select>
+                  </div>
 
-              <div className="field-shell space-y-2">
-                <Label htmlFor="storefront_cta_align">Allineamento CTA</Label>
-                <select
-                  id="storefront_cta_align"
-                  name="storefront_cta_align"
-                  value={storefrontCtaAlign}
-                  onChange={(event) => setStorefrontCtaAlign(event.target.value as StorefrontCtaAlign)}
-                  className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
-                  disabled={!storefrontThemeEnabled}
-                >
-                  <option value="left">Sinistra</option>
-                  <option value="center">Centro</option>
-                  <option value="right">Destra</option>
-                </select>
-              </div>
-            </div>
+                  <div className="field-shell space-y-2">
+                    <Label htmlFor="storefront_cta_align">Allineamento CTA</Label>
+                    <select
+                      id="storefront_cta_align"
+                      name="storefront_cta_align"
+                      value={storefrontCtaAlign}
+                      onChange={(event) =>
+                        setStorefrontCtaAlign(event.target.value as StorefrontCtaAlign)
+                      }
+                      className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                      disabled={!storefrontThemeEnabled}
+                    >
+                      <option value="left">Sinistra</option>
+                      <option value="center">Centro</option>
+                      <option value="right">Destra</option>
+                    </select>
+                  </div>
+                </div>
 
-            <div className="mt-4 rounded-[1.4rem] border border-[color:var(--border)] bg-[color:var(--muted)]/25 p-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <Label htmlFor="storefront-bg-upload">Sfondo storefront</Label>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    JPG/PNG/WEBP fino a {formatMegabytes(BG_MAX_BYTES)}. Minimo {BG_MIN_WIDTH}x{BG_MIN_HEIGHT}px.
+                <div className="rounded-[1.4rem] border border-[color:var(--border)] bg-[color:var(--muted)]/25 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <Label htmlFor="storefront-bg-upload">Sfondo storefront</Label>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        JPG/PNG/WEBP fino a {formatMegabytes(BG_MAX_BYTES)}. Minimo {BG_MIN_WIDTH}x
+                        {BG_MIN_HEIGHT}px.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        ref={storefrontBgFileInputRef}
+                        id="storefront-bg-upload"
+                        type="file"
+                        accept={BG_ALLOWED_TYPES.join(",")}
+                        className="hidden"
+                        onChange={(event) => {
+                          void handleStorefrontBackgroundFileSelect(event);
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={storefrontBgUploading || !storefrontThemeEnabled}
+                        onClick={() => storefrontBgFileInputRef.current?.click()}
+                      >
+                        {storefrontBgUploading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Carica sfondo"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="field-shell space-y-2">
+                      <Label htmlFor="storefront_bg_image_url">URL sfondo</Label>
+                      <Input
+                        id="storefront_bg_image_url"
+                        name="storefront_bg_image_url"
+                        type="url"
+                        value={storefrontBgUrl}
+                        onChange={(event) => setStorefrontBgUrl(event.target.value)}
+                        placeholder="https://.../background.jpg"
+                        disabled={!storefrontThemeEnabled}
+                      />
+                    </div>
+
+                    <div className="field-shell space-y-2">
+                      <Label htmlFor="storefront_bg_scope">Dove applicare lo sfondo</Label>
+                      <select
+                        id="storefront_bg_scope"
+                        name="storefront_bg_scope"
+                        value={storefrontBgScope}
+                        onChange={(event) => setStorefrontBgScope(event.target.value as StorefrontBgScope)}
+                        className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
+                        disabled={!storefrontThemeEnabled}
+                      >
+                        <option value="header">Solo header hero</option>
+                        <option value="page">Pagina intera</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 field-shell space-y-2">
+                    <Label htmlFor="storefront_bg_overlay_opacity">
+                      Overlay leggibilita ({storefrontBgOverlayOpacity}%)
+                    </Label>
+                    <input
+                      id="storefront_bg_overlay_opacity"
+                      name="storefront_bg_overlay_opacity"
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={storefrontBgOverlayOpacity}
+                      onChange={(event) =>
+                        setStorefrontBgOverlayOpacity(
+                          Math.min(100, Math.max(0, Number.parseInt(event.target.value, 10) || 0))
+                        )
+                      }
+                      className="w-full accent-primary"
+                      disabled={!storefrontThemeEnabled}
+                    />
+                  </div>
+
+                  {storefrontBgSizeInfo ? (
+                    <p className="mt-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      Ultimo sfondo: {storefrontBgSizeInfo.width}x{storefrontBgSizeInfo.height}px,{" "}
+                      {formatMegabytes(storefrontBgSizeInfo.bytes)}
+                    </p>
+                  ) : null}
+                  {storefrontBgMessage ? (
+                    <p
+                      className={`mt-3 text-sm font-medium ${
+                        storefrontBgMessage.startsWith("Errore")
+                          ? "text-red-700"
+                          : "text-emerald-700"
+                      }`}
+                    >
+                      {storefrontBgMessage}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="field-shell space-y-3">
+                    <Label htmlFor="storefront_color_primary">Colore primario</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        id="storefront_color_primary"
+                        name="storefront_color_primary"
+                        type="color"
+                        value={storefrontColorPrimary}
+                        onChange={(event) => setStorefrontColorPrimary(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                      />
+                      <Input
+                        value={storefrontColorPrimary}
+                        onChange={(event) => setStorefrontColorPrimary(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="font-mono uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field-shell space-y-3">
+                    <Label htmlFor="storefront_color_secondary">Colore secondario</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        id="storefront_color_secondary"
+                        name="storefront_color_secondary"
+                        type="color"
+                        value={storefrontColorSecondary}
+                        onChange={(event) => setStorefrontColorSecondary(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                      />
+                      <Input
+                        value={storefrontColorSecondary}
+                        onChange={(event) => setStorefrontColorSecondary(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="font-mono uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field-shell space-y-3">
+                    <Label htmlFor="storefront_color_text">Colore testo</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        id="storefront_color_text"
+                        name="storefront_color_text"
+                        type="color"
+                        value={storefrontColorText}
+                        onChange={(event) => setStorefrontColorText(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
+                      />
+                      <Input
+                        value={storefrontColorText}
+                        onChange={(event) => setStorefrontColorText(event.target.value)}
+                        disabled={!storefrontThemeEnabled}
+                        className="font-mono uppercase"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[color:var(--border)] bg-white px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                    Anteprima contrasto CTA
                   </p>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    ref={storefrontBgFileInputRef}
-                    id="storefront-bg-upload"
-                    type="file"
-                    accept={BG_ALLOWED_TYPES.join(",")}
-                    className="hidden"
-                    onChange={(event) => {
-                      void handleStorefrontBackgroundFileSelect(event);
+                  <div
+                    className="mt-2 inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold"
+                    style={{
+                      backgroundColor: storefrontColorPrimary,
+                      color: storefrontPrimaryContrast,
                     }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={storefrontBgUploading || !storefrontThemeEnabled}
-                    onClick={() => storefrontBgFileInputRef.current?.click()}
                   >
-                    {storefrontBgUploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Carica sfondo"
-                    )}
-                  </Button>
+                    Pulsante primario
+                  </div>
                 </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="field-shell space-y-2">
-                  <Label htmlFor="storefront_bg_image_url">URL sfondo</Label>
-                  <Input
-                    id="storefront_bg_image_url"
-                    name="storefront_bg_image_url"
-                    type="url"
-                    value={storefrontBgUrl}
-                    onChange={(event) => setStorefrontBgUrl(event.target.value)}
-                    placeholder="https://.../background.jpg"
-                    disabled={!storefrontThemeEnabled}
-                  />
-                </div>
-
-                <div className="field-shell space-y-2">
-                  <Label htmlFor="storefront_bg_scope">Dove applicare lo sfondo</Label>
-                  <select
-                    id="storefront_bg_scope"
-                    name="storefront_bg_scope"
-                    value={storefrontBgScope}
-                    onChange={(event) => setStorefrontBgScope(event.target.value as StorefrontBgScope)}
-                    className="w-full bg-transparent text-sm font-medium text-foreground outline-none"
-                    disabled={!storefrontThemeEnabled}
-                  >
-                    <option value="header">Solo header hero</option>
-                    <option value="page">Pagina intera</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-4 field-shell space-y-2">
-                <Label htmlFor="storefront_bg_overlay_opacity">
-                  Overlay leggibilita ({storefrontBgOverlayOpacity}%)
-                </Label>
-                <input
-                  id="storefront_bg_overlay_opacity"
-                  name="storefront_bg_overlay_opacity"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={storefrontBgOverlayOpacity}
-                  onChange={(event) =>
-                    setStorefrontBgOverlayOpacity(
-                      Math.min(100, Math.max(0, Number.parseInt(event.target.value, 10) || 0))
-                    )
-                  }
-                  className="w-full accent-primary"
-                  disabled={!storefrontThemeEnabled}
-                />
-              </div>
-
-              {storefrontBgSizeInfo ? (
-                <p className="mt-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                  Ultimo sfondo: {storefrontBgSizeInfo.width}x{storefrontBgSizeInfo.height}px,{" "}
-                  {formatMegabytes(storefrontBgSizeInfo.bytes)}
-                </p>
-              ) : null}
-              {storefrontBgMessage ? (
-                <p
-                  className={`mt-3 text-sm font-medium ${
-                    storefrontBgMessage.startsWith("Errore")
-                      ? "text-red-700"
-                      : "text-emerald-700"
-                  }`}
-                >
-                  {storefrontBgMessage}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <div className="field-shell space-y-3">
-                <Label htmlFor="storefront_color_primary">Colore primario</Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="storefront_color_primary"
-                    name="storefront_color_primary"
-                    type="color"
-                    value={storefrontColorPrimary}
-                    onChange={(event) => setStorefrontColorPrimary(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
-                  />
-                  <Input
-                    value={storefrontColorPrimary}
-                    onChange={(event) => setStorefrontColorPrimary(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="font-mono uppercase"
-                  />
-                </div>
-              </div>
-
-              <div className="field-shell space-y-3">
-                <Label htmlFor="storefront_color_secondary">Colore secondario</Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="storefront_color_secondary"
-                    name="storefront_color_secondary"
-                    type="color"
-                    value={storefrontColorSecondary}
-                    onChange={(event) => setStorefrontColorSecondary(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
-                  />
-                  <Input
-                    value={storefrontColorSecondary}
-                    onChange={(event) => setStorefrontColorSecondary(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="font-mono uppercase"
-                  />
-                </div>
-              </div>
-
-              <div className="field-shell space-y-3">
-                <Label htmlFor="storefront_color_text">Colore testo</Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="storefront_color_text"
-                    name="storefront_color_text"
-                    type="color"
-                    value={storefrontColorText}
-                    onChange={(event) => setStorefrontColorText(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="h-12 w-16 cursor-pointer rounded-xl border border-[color:var(--border)] px-1"
-                  />
-                  <Input
-                    value={storefrontColorText}
-                    onChange={(event) => setStorefrontColorText(event.target.value)}
-                    disabled={!storefrontThemeEnabled}
-                    className="font-mono uppercase"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-[color:var(--border)] bg-white px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Anteprima contrasto CTA
-              </p>
-              <div className="mt-2 inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold"
-                style={{
-                  backgroundColor: storefrontColorPrimary,
-                  color: storefrontPrimaryContrast,
-                }}
-              >
-                Pulsante primario
               </div>
             </div>
           </div>
@@ -914,7 +966,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <button
                 type="button"
-                onClick={() => setPaymentMode("online_full")}
+                onClick={handleSelectOnlineFull}
                 className={`rounded-[1.4rem] border px-4 py-4 text-left ${
                   paymentMode === "online_full"
                     ? "border-primary bg-white shadow-[0_10px_30px_rgba(217,121,66,0.12)]"
@@ -996,6 +1048,14 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                 </div>
               </div>
             )}
+
+            {paymentMode === "online_full" && (
+              <div className="mt-4 flex items-center justify-end">
+                <Button type="button" variant="outline" onClick={() => setStripeModalOpen(true)}>
+                  Apri configurazione Stripe Connect
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="field-shell space-y-3">
@@ -1034,6 +1094,27 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
           </div>
         </form>
       </CardContent>
+
+      <Dialog open={stripeModalOpen} onOpenChange={setStripeModalOpen}>
+        <DialogContent className="max-w-3xl p-0">
+          <div className="p-6 md:p-8">
+            <DialogHeader>
+              <DialogTitle>Configura pagamenti online</DialogTitle>
+              <DialogDescription>
+                Collega Stripe Connect per attivare l&apos;incasso con Online completo.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="px-6 pb-3 md:px-8">
+            <StripeConnectCard />
+          </div>
+          <DialogFooter className="px-6 pb-6 md:px-8">
+            <Button type="button" variant="outline" onClick={() => setStripeModalOpen(false)}>
+              Chiudi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
