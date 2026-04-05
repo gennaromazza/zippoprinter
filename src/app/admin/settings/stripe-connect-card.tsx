@@ -20,6 +20,19 @@ interface ConnectStartResponse {
   error?: string;
 }
 
+async function parseJsonSafe<T>(response: Response): Promise<T> {
+  const raw = await response.text();
+  if (!raw) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error("Risposta non valida dal server. Riprova tra qualche secondo.");
+  }
+}
+
 function getConnectLabel(status: ConnectStatus | null | undefined) {
   switch (status) {
     case "connected":
@@ -60,7 +73,7 @@ export function StripeConnectCard() {
     setError("");
     try {
       const response = await fetch("/api/admin/billing/connect/status", { method: "GET" });
-      const payload = (await response.json()) as ConnectStatusResponse;
+      const payload = await parseJsonSafe<ConnectStatusResponse>(response);
       if (!response.ok) {
         throw new Error(payload.error || "Impossibile leggere lo stato Stripe.");
       }
@@ -86,7 +99,7 @@ export function StripeConnectCard() {
     setMessage("");
     try {
       const response = await fetch("/api/admin/billing/connect/start", { method: "POST" });
-      const payload = (await response.json()) as ConnectStartResponse;
+      const payload = await parseJsonSafe<ConnectStartResponse>(response);
       if (!response.ok || !payload.url) {
         throw new Error(payload.error || "Impossibile avviare onboarding Stripe.");
       }
