@@ -1,71 +1,64 @@
-# Platform Operations (Owner Dashboard V1)
+# Operazioni Piattaforma (Dashboard Owner V1)
 
-## Goal
+## Obiettivo
 
-The `/platform` area is the owner-only control tower for SaaS operations. It is read-only in V1 and focuses on observability, incident triage, and tenant health.
+L'area `/platform` e il pannello operativo del proprietario SaaS. In V1 resta read-only e serve per capire in fretta:
 
-## Pages
+- dove ci sono rischi su studi/abbonamenti
+- se i pagamenti online sono pronti
+- se domini e webhook sono in salute
+
+## Schermate
 
 - `/platform`
-  - global KPI snapshot
-  - 7/30-day trend summaries
-  - prioritized alert panel
+  - KPI globali
+  - trend 7/30 giorni
+  - alert prioritizzati
 - `/platform/tenants`
-  - tenant list with filters (subscription/connect/domain/search)
-  - cursor pagination
+  - elenco studi con filtri
+  - stato operativo sintetico (`OK`, `Attenzione`, `Critico`)
 - `/platform/tenants/[id]`
-  - tenant drill-down (billing account, subscription, entitlements, domains)
-  - event timeline + audit timeline
-  - deep links to Stripe/Vercel/Supabase
+  - dettaglio studio (abbonamento, Connect, domini, timeline eventi)
 - `/platform/events`
-  - platform billing/webhook event stream explorer
+  - stream eventi piattaforma (billing/webhook)
 
-## Access Model
+## Glossario Italiano UI
 
-- Owner auth source: `platform_admins` table.
-- `/platform` and `/api/platform/*` require active `platform_admins.auth_user_id` match.
-- In production, feature flag `ENABLE_PLATFORM_DASHBOARD=true` is required.
+- Tenant -> Studio
+- Connect ready -> Pagamenti online pronti
+- Webhook backlog -> Eventi in attesa
+- Critical/Warning/Info -> Critico/Attenzione/Informativo
 
-## Alert Semantics
+## Dizionario KPI + Tooltip
 
-Alerts are generated from `platform_alert_feed` view.
+- **Studi totali**
+  - quanti studi sono registrati sulla piattaforma
+- **Abbonamenti attivi**
+  - studi in trial/active/lifetime
+- **Pagamenti online pronti**
+  - studi con Stripe Connect collegato e operativo
+- **Eventi in attesa**
+  - webhook non processati oltre soglia (10 minuti)
 
-- `critical`
-  - tenant `past_due`/`suspended`
-  - domain verify/SSL failed
-- `warning`
-  - connect not ready while entitlement needs online payments
-  - domain pending too long
-  - webhook backlog over threshold
-- `info`
-  - reserved for non-blocking operational context
+## Semantica Alert
 
-## API Contracts (Owner)
+- `Critico`
+  - rischio alto, potenziale blocco operativo/ricavi
+- `Attenzione`
+  - rischio medio, intervento consigliato nel breve
+- `Informativo`
+  - segnale di contesto non bloccante
 
-- `GET /api/platform/overview`
-- `GET /api/platform/tenants`
-- `GET /api/platform/tenants/:id`
-- `GET /api/platform/alerts`
-- `GET /api/platform/events`
+## Controllo Giornaliero (3 minuti)
 
-Error contract is uniform:
-
-```json
-{
-  "error": {
-    "message": "...",
-    "requestId": "uuid",
-    "details": {}
-  }
-}
-```
-
-## Incident Workflow
-
-1. Open `/platform` and inspect critical alerts.
-2. Drill into `/platform/tenants/[id]` for affected tenant.
-3. Cross-check `billing_events` and `audit_logs` timeline.
-4. Follow runbooks:
+1. Apri `/platform`: guarda `Eventi in attesa` e alert critici.
+2. Vai su `/platform/tenants`: ordina mentalmente gli studi "Critico" prima.
+3. Apri `/platform/tenants/[id]` sugli studi critici:
+   - stato abbonamento
+   - stato pagamenti online
+   - stato dominio
+   - timeline eventi
+4. Se serve approfondimento tecnico, usa i runbook:
    - `docs/runbooks/billing-lifecycle.md`
    - `docs/runbooks/domain-onboarding.md`
    - `docs/security/incident-playbook.md`

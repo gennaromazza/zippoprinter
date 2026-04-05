@@ -35,7 +35,7 @@ ZippoPrinter e una web app per studi fotografici che raccoglie ordini di stampa 
 - `/setup`
   utilita di setup e diagnostica ambiente.
 - `/platform`
-  owner dashboard multi-tenant (read-only) per controllo SaaS.
+  pannello proprietario multi-studio (read-only) per monitorare abbonamenti, pagamenti online, domini e alert.
 
 ## UI v1
 

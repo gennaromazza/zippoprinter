@@ -10,6 +10,7 @@ This folder is the single source of truth for architecture, operations, and prod
 4. `docs/api/contracts.md`
 5. `docs/agents/CONTRIBUTING_AI.md`
 6. `docs/platform-operations.md`
+7. `docs/platform-owner-audit.md`
 
 ## Runbooks
 
