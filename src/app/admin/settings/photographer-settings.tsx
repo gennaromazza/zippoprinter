@@ -696,6 +696,25 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                   {logoMessage}
                 </p>
               )}
+
+              <div className="mt-4 flex flex-col gap-3 rounded-[1.2rem] border border-[color:var(--border)] bg-white/85 p-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Hai finito con il logo?</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Salva subito per applicare logo e branding alla pagina ordini.
+                  </p>
+                </div>
+                <Button type="submit" disabled={loading || logoUploading} className="md:shrink-0">
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Salvataggio
+                    </>
+                  ) : (
+                    "Salva logo e branding"
+                  )}
+                </Button>
+              </div>
             </div>
             <div className="field-shell space-y-2">
               <Label htmlFor="phone">Telefono</Label>
@@ -1115,13 +1134,21 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               </>
             )}
 
-            {paymentMode === "online_full" && (
-              <div className="mt-4 flex items-center justify-end">
-                <Button type="button" variant="outline" onClick={() => setStripeModalOpen(true)}>
-                  Apri configurazione Stripe Connect
+            <div className="mt-4 rounded-[1.4rem] border border-primary/30 bg-primary/5 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Vuoi ricevere pagamenti online? Configura Stripe.
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Collega Stripe Connect una volta e abilita subito gli incassi online.
+                  </p>
+                </div>
+                <Button type="button" onClick={() => setStripeModalOpen(true)} className="md:shrink-0">
+                  Configura Stripe
                 </Button>
               </div>
-            )}
+            </div>
           </div>
 
           <SubscriptionStatusPanel />
