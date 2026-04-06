@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, Building2, Shield, Zap, ScrollText } from "lucide-react";
+import { BarChart3, Building2, Shield, Zap, ScrollText, User } from "lucide-react";
 import { getPlatformAdminContext } from "@/lib/platform-auth";
 import { Button } from "@/components/ui/button";
 
@@ -40,6 +40,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             <Link href="/platform/tenants"><Button variant="outline" size="sm"><Building2 className="h-4 w-4" />Studi</Button></Link>
             <Link href="/platform/events"><Button variant="outline" size="sm"><Zap className="h-4 w-4" />Eventi</Button></Link>
             <Link href="/platform/audit"><Button variant="outline" size="sm"><ScrollText className="h-4 w-4" />Audit</Button></Link>
+            <Link href="/platform/account"><Button variant="outline" size="sm"><User className="h-4 w-4" />Account</Button></Link>
           </nav>
         </header>
         {children}

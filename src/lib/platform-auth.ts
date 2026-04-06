@@ -16,6 +16,35 @@ const ROLE_RANK: Record<PlatformAdminRole, number> = {
   owner_admin: 3,
 };
 
+function normalizeEmail(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+async function syncPlatformAdminEmailFromAuth(input: {
+  adminClient: ReturnType<typeof createAdminClient>;
+  admin: PlatformAdmin;
+  authEmail: string | null | undefined;
+}) {
+  const { adminClient, admin, authEmail } = input;
+
+  if (!authEmail) {
+    return admin;
+  }
+
+  if (normalizeEmail(admin.email) === normalizeEmail(authEmail)) {
+    return admin;
+  }
+
+  const { data: updated } = await adminClient
+    .from("platform_admins")
+    .update({ email: authEmail })
+    .eq("id", admin.id)
+    .select("*")
+    .maybeSingle();
+
+  return (updated as PlatformAdmin | null) || { ...admin, email: authEmail };
+}
+
 export function isPlatformDashboardEnabled() {
   if (process.env.ENABLE_PLATFORM_DASHBOARD === "true") {
     return true;
@@ -49,13 +78,18 @@ export async function getPlatformAdminContext() {
   if (!data) {
     return { status: 403 as const, error: "Forbidden" };
   }
+  const syncedAdmin = await syncPlatformAdminEmailFromAuth({
+    adminClient,
+    admin: data as PlatformAdmin,
+    authEmail: user.email,
+  });
 
   return {
     status: 200 as const,
     context: {
       userId: user.id,
       userEmail: user.email || null,
-      admin: data as PlatformAdmin,
+      admin: syncedAdmin,
     },
   };
 }
@@ -70,7 +104,7 @@ export function hasPlatformRole(
   return ROLE_RANK[role] >= ROLE_RANK[minimum];
 }
 
-export async function isPlatformAdminUser(userId: string) {
+export async function isPlatformAdminUser(userId: string, userEmail?: string | null) {
   if (!isPlatformDashboardEnabled()) {
     return false;
   }
@@ -78,10 +112,18 @@ export async function isPlatformAdminUser(userId: string) {
   const adminClient = createAdminClient();
   const { data } = await adminClient
     .from("platform_admins")
-    .select("id")
+    .select("*")
     .eq("auth_user_id", userId)
     .eq("is_active", true)
     .maybeSingle();
+
+  if (data && userEmail) {
+    await syncPlatformAdminEmailFromAuth({
+      adminClient,
+      admin: data as PlatformAdmin,
+      authEmail: userEmail,
+    });
+  }
 
   return Boolean(data?.id);
 }

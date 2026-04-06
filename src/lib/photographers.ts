@@ -14,6 +14,33 @@ export interface PublicStudioSummary extends Photographer {
   active_format_count: number;
 }
 
+function normalizeEmail(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+async function syncPhotographerEmailFromAuth(
+  admin: ReturnType<typeof createAdminClient>,
+  photographer: Photographer,
+  authEmail: string | null | undefined
+) {
+  if (!authEmail) {
+    return photographer;
+  }
+
+  if (normalizeEmail(photographer.email) === normalizeEmail(authEmail)) {
+    return photographer;
+  }
+
+  const { data: updated } = await admin
+    .from("photographers")
+    .update({ email: authEmail })
+    .eq("id", photographer.id)
+    .select("*")
+    .maybeSingle();
+
+  return (updated as Photographer | null) || { ...photographer, email: authEmail };
+}
+
 async function ensurePhotographerHasActiveAccess(
   admin: ReturnType<typeof createAdminClient>,
   photographer: Photographer | null
@@ -47,7 +74,8 @@ export const getCurrentPhotographerForUser = cache(
       .maybeSingle();
 
     if (linkedData) {
-      return ensurePhotographerHasActiveAccess(admin, linkedData as Photographer);
+      const synced = await syncPhotographerEmailFromAuth(admin, linkedData as Photographer, user.email);
+      return ensurePhotographerHasActiveAccess(admin, synced);
     }
 
     // 2. Fallback: match by email and claim if unclaimed
@@ -68,9 +96,15 @@ export const getCurrentPhotographerForUser = cache(
           .select("*")
           .maybeSingle();
 
+        const synced = await syncPhotographerEmailFromAuth(
+          admin,
+          (claimedByEmail || { ...emailData, auth_user_id: user.id }) as Photographer,
+          user.email
+        );
+
         return ensurePhotographerHasActiveAccess(
           admin,
-          (claimedByEmail || { ...emailData, auth_user_id: user.id }) as Photographer
+          synced
         );
       }
 
@@ -82,7 +116,12 @@ export const getCurrentPhotographerForUser = cache(
         .maybeSingle();
 
       if (emailOwnedData) {
-        return ensurePhotographerHasActiveAccess(admin, emailOwnedData as Photographer);
+        const synced = await syncPhotographerEmailFromAuth(
+          admin,
+          emailOwnedData as Photographer,
+          user.email
+        );
+        return ensurePhotographerHasActiveAccess(admin, synced);
       }
     }
 

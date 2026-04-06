@@ -55,7 +55,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   const photographer = await getCurrentPhotographerForUser(user);
   if (!photographer) redirect("/login");
-  const canAccessPlatformDashboard = await isPlatformAdminUser(user.id);
+  const canAccessPlatformDashboard = await isPlatformAdminUser(user.id, user.email || null);
 
   return (
     <AdminShell

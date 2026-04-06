@@ -35,6 +35,8 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const authError = params.get("authError");
+    const passwordChanged = params.get("passwordChanged") === "1";
+    const emailChange = params.get("emailChange");
     const isRecoveryQuery = params.get("recovery") === "1";
     const isRecoveryHash = hashParams.get("type") === "recovery";
     const accessToken = hashParams.get("access_token");
@@ -42,6 +44,14 @@ export default function LoginPage() {
 
     if (authError === "otp_expired") {
       setError("Il link email e scaduto o gia usato. Richiedi un nuovo reset password.");
+    }
+
+    if (!isRecoveryQuery && !isRecoveryHash) {
+      if (passwordChanged) {
+        setInfoMessage("Password aggiornata con successo. Accedi con le nuove credenziali.");
+      } else if (emailChange === "confirmed") {
+        setInfoMessage("Email aggiornata con successo. Ora puoi accedere con il nuovo indirizzo.");
+      }
     }
 
     if (isRecoveryQuery || isRecoveryHash) {

@@ -6,6 +6,7 @@ import type { Photographer, PrintFormat } from "@/lib/types";
 import { PhotographerSettings } from "./photographer-settings";
 import { DomainSettingsPanel } from "./domain-settings-panel";
 import { PrintFormatsManager } from "./print-formats-manager";
+import { AccountSecurityPanel } from "@/components/account-security-panel";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -36,14 +37,15 @@ export default async function SettingsPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
           <p className="section-kicker"><SettingsIcon className="h-3.5 w-3.5" />Impostazioni</p>
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Branding e formati</h1>
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Branding, account e formati</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Presentazione white-label, catalogo formati di stampa e modalita di checkout.
+            Presentazione white-label, sicurezza account, catalogo formati di stampa e modalita di checkout.
           </p>
         </header>
 
         <div className="space-y-6">
           <PhotographerSettings photographer={photographer} />
+          <AccountSecurityPanel initialEmail={user.email || photographer.email} context="studio" />
           <DomainSettingsPanel />
           <PrintFormatsManager formats={printFormats} photographerId={photographer?.id || ""} />
         </div>

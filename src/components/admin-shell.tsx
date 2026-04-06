@@ -11,6 +11,7 @@ import {
   Package,
   Shield,
   Settings,
+  User,
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -110,15 +111,24 @@ export function AdminShell({
             </p>
             <p className="text-xs text-muted-foreground">Studio</p>
           </div>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={signingOut}
-            className="shrink-0 rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-[color:var(--muted)]/50 hover:text-foreground disabled:opacity-50"
-            aria-label="Esci"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link
+              href="/admin/settings#account-security"
+              className="shrink-0 rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-[color:var(--muted)]/50 hover:text-foreground"
+              aria-label="Account"
+            >
+              <User className="h-4 w-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="shrink-0 rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-[color:var(--muted)]/50 hover:text-foreground disabled:opacity-50"
+              aria-label="Esci"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </>
