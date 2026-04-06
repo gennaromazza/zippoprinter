@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 export function MarketingHeader() {
   const [open, setOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => {
+      setIsLoggedIn(Boolean(data.session));
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(Boolean(session));
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/60 bg-[rgba(250,248,245,0.82)] backdrop-blur-lg">
@@ -32,12 +49,21 @@ export function MarketingHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/login?force=1"
-            className="hidden text-sm font-semibold text-foreground hover:text-primary md:block"
-          >
-            Accedi
-          </Link>
+          {isLoggedIn ? (
+            <Link
+              href="/admin"
+              className="hidden text-sm font-semibold text-foreground hover:text-primary md:block"
+            >
+              Dashboard
+            </Link>
+          ) : (
+            <Link
+              href="/login?force=1"
+              className="hidden text-sm font-semibold text-foreground hover:text-primary md:block"
+            >
+              Accedi
+            </Link>
+          )}
           <Link
             href="/signup?force=1"
             className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]"
@@ -73,13 +99,23 @@ export function MarketingHeader() {
             >
               Prezzi
             </Link>
-            <Link
-              href="/login?force=1"
-              onClick={() => setOpen(false)}
-              className="rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-white/70"
-            >
-              Accedi
-            </Link>
+            {isLoggedIn ? (
+              <Link
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-white/70"
+              >
+                Dashboard
+              </Link>
+            ) : (
+              <Link
+                href="/login?force=1"
+                onClick={() => setOpen(false)}
+                className="rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-white/70"
+              >
+                Accedi
+              </Link>
+            )}
           </div>
         </nav>
       )}
