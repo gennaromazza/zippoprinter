@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { resolveTenantByHost } from "@/lib/tenant-domains";
+import { isPlatformAdminUser } from "@/lib/platform-auth";
 import { AdminShell } from "@/components/admin-shell";
 
 function getPlatformAdminUrl() {
@@ -54,9 +55,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   const photographer = await getCurrentPhotographerForUser(user);
   if (!photographer) redirect("/login");
+  const canAccessPlatformDashboard = await isPlatformAdminUser(user.id);
 
   return (
-    <AdminShell photographerName={photographer.name || "Studio fotografico"}>
+    <AdminShell
+      photographerName={photographer.name || "Studio fotografico"}
+      canAccessPlatformDashboard={canAccessPlatformDashboard}
+    >
       {children}
     </AdminShell>
   );

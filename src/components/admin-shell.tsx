@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Shield,
   Settings,
   X,
 } from "lucide-react";
@@ -22,10 +23,15 @@ const NAV_ITEMS = [
 
 interface AdminShellProps {
   photographerName: string;
+  canAccessPlatformDashboard?: boolean;
   children: React.ReactNode;
 }
 
-export function AdminShell({ photographerName, children }: AdminShellProps) {
+export function AdminShell({
+  photographerName,
+  canAccessPlatformDashboard = false,
+  children,
+}: AdminShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -79,6 +85,20 @@ export function AdminShell({ photographerName, children }: AdminShellProps) {
             </Link>
           );
         })}
+        {canAccessPlatformDashboard ? (
+          <Link
+            href="/platform"
+            onClick={() => setMobileOpen(false)}
+            className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
+              pathname.startsWith("/platform")
+                ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_rgba(217,121,66,0.15)]"
+                : "text-muted-foreground hover:bg-[color:var(--muted)]/50 hover:text-foreground"
+            }`}
+          >
+            <Shield className="h-[18px] w-[18px] shrink-0" />
+            Piattaforma
+          </Link>
+        ) : null}
       </nav>
 
       {/* Bottom: user + sign-out */}
