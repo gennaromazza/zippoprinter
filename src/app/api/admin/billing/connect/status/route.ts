@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedPhotographerContext } from "@/lib/admin-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe";
+import {
+  getStripeConnectStatusCard,
+  syncStripeConnectAccountForPhotographer,
+} from "@/lib/stripe-connect";
+import type { StripeConnectStatusCard } from "@/lib/types";
 import { getTenantBillingContext, writeAuditLog } from "@/lib/tenant-billing";
 
 export const runtime = "nodejs";
@@ -20,42 +25,60 @@ export async function GET() {
     const stripe = getStripeClient();
     const context = await getTenantBillingContext(photographer.id);
     const connectAccountId = context.billingAccount?.stripe_connect_account_id || null;
+    let statusCard: StripeConnectStatusCard = getStripeConnectStatusCard({
+      stripeConnectAccountId: connectAccountId,
+      detailsSubmitted: context.billingAccount?.details_submitted,
+      chargesEnabled: context.billingAccount?.charges_enabled,
+      payoutsEnabled: context.billingAccount?.payouts_enabled,
+    });
 
     if (stripe && connectAccountId) {
-      const account = await stripe.accounts.retrieve(connectAccountId);
-      const hasDisabledReason = Boolean(account.requirements?.disabled_reason);
-      const connectStatus = hasDisabledReason
-        ? "disabled"
-        : account.charges_enabled && account.payouts_enabled
-          ? "connected"
-          : account.details_submitted
-            ? "restricted"
-            : "pending";
+      try {
+        const account = await stripe.accounts.retrieve(connectAccountId);
+        const syncResult = await syncStripeConnectAccountForPhotographer({
+          photographerId: photographer.id,
+          account,
+          actorUserId: user.id,
+        });
 
-      const admin = createAdminClient();
-      await admin
-        .from("tenant_billing_accounts")
-        .update({
-          connect_status: connectStatus,
-          charges_enabled: Boolean(account.charges_enabled),
-          payouts_enabled: Boolean(account.payouts_enabled),
-          details_submitted: Boolean(account.details_submitted),
-          onboarding_completed_at: account.charges_enabled ? new Date().toISOString() : null,
-        })
-        .eq("photographer_id", photographer.id);
+        statusCard = syncResult.statusCard;
 
-      await writeAuditLog({
-        photographerId: photographer.id,
-        actorUserId: user.id,
-        action: "connect_status_synced",
-        resourceType: "tenant_billing_accounts",
-        resourceId: connectAccountId,
-        details: {
-          connectStatus,
-          chargesEnabled: Boolean(account.charges_enabled),
-          payoutsEnabled: Boolean(account.payouts_enabled),
-        },
-      });
+        await writeAuditLog({
+          photographerId: photographer.id,
+          actorUserId: user.id,
+          action: "connect_status_checked",
+          resourceType: "tenant_billing_accounts",
+          resourceId: connectAccountId,
+          details: {
+            tone: syncResult.statusCard.tone,
+            requirementsCurrentlyDue: syncResult.requirementsCurrentlyDue,
+          },
+        });
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "resource_missing"
+        ) {
+          const admin = createAdminClient();
+          await admin
+            .from("tenant_billing_accounts")
+            .update({
+              stripe_connect_account_id: null,
+              connect_status: "not_connected",
+              charges_enabled: false,
+              payouts_enabled: false,
+              details_submitted: false,
+              onboarding_completed_at: null,
+            })
+            .eq("photographer_id", photographer.id);
+
+          statusCard = getStripeConnectStatusCard({});
+        } else {
+          throw error;
+        }
+      }
     }
 
     const refreshed = await getTenantBillingContext(photographer.id);
@@ -63,6 +86,7 @@ export async function GET() {
       billingAccount: refreshed.billingAccount,
       subscription: refreshed.subscription,
       entitlements: refreshed.entitlements,
+      statusCard,
       connectReady:
         refreshed.billingAccount?.connect_status === "connected" &&
         Boolean(refreshed.entitlements?.can_accept_online_payments),

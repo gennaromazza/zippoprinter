@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient, getStripeWebhookSecrets } from "@/lib/stripe";
+import { syncStripeConnectAccountByAccountId } from "@/lib/stripe-connect";
 import { writeProcessAuditEvent } from "@/lib/process-audit";
 import { sendBillingNotification } from "@/lib/email-notifications";
 
@@ -343,6 +344,13 @@ async function handleInvoiceEvent(invoice: Stripe.Invoice, paid: boolean) {
   return { ok: true };
 }
 
+async function handleConnectAccountUpdated(account: Stripe.Account) {
+  await syncStripeConnectAccountByAccountId({
+    connectAccountId: account.id,
+    account,
+  });
+}
+
 function parseEventWithKnownSecrets(
   stripe: Stripe,
   payload: string,
@@ -485,6 +493,10 @@ export async function POST(request: Request) {
     if (!result.ok) {
       return NextResponse.json({ error: result.message }, { status: result.status });
     }
+  }
+
+  if (event.type === "account.updated") {
+    await handleConnectAccountUpdated(event.data.object as Stripe.Account);
   }
 
   await admin

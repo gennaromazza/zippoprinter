@@ -3,12 +3,12 @@
 ## Billing Connect
 
 - `POST /api/admin/billing/connect/start`
-  - starts/refreshes Stripe Connect onboarding.
+  - starts/refreshes Stripe Connect Express onboarding.
   - response: `{ url, connectAccountId, connectReady }`.
 
 - `GET /api/admin/billing/connect/status`
-  - syncs and returns connect status + subscription + entitlements.
-  - response: `{ billingAccount, subscription, entitlements, connectReady }`.
+  - syncs and returns connect status + subscription + entitlements + status card.
+  - response: `{ billingAccount, subscription, entitlements, statusCard, connectReady }`.
 
 - `GET /api/admin/billing/subscription/status`
   - returns active plans and current tenant subscription context.
@@ -71,6 +71,7 @@
     - `checkout.session.completed`
     - `checkout.session.async_payment_succeeded`
     - `payment_intent.succeeded`
+    - `account.updated`
   - subscriptions:
     - `customer.subscription.created|updated|deleted`
     - `invoice.paid`

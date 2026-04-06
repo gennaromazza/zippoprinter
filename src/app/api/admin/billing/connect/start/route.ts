@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { getAuthenticatedPhotographerContext } from "@/lib/admin-auth";
 import { isSameOriginRequest } from "@/lib/request-security";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe";
+import {
+  getStripeConnectSetupUrl,
+  syncStripeConnectAccountForPhotographer,
+} from "@/lib/stripe-connect";
 import { writeAuditLog } from "@/lib/tenant-billing";
 import { getCorrelationIdFromHeaders, writeProcessAuditEvent } from "@/lib/process-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getStripeConnectSetupUrl() {
-  const key = process.env.STRIPE_SECRET_KEY || "";
-  if (key.startsWith("sk_test_")) {
-    return "https://dashboard.stripe.com/test/connect";
-  }
-  return "https://dashboard.stripe.com/connect";
-}
 
 function getOriginFromRequest(request: Request) {
   const forwardedProto = request.headers.get("x-forwarded-proto");
@@ -24,6 +21,47 @@ function getOriginFromRequest(request: Request) {
     return `${forwardedProto || "http"}://${forwardedHost}`;
   }
   return new URL(request.url).origin;
+}
+
+async function ensureExpressAccount(input: {
+  stripe: Stripe;
+  connectAccountId: string | null;
+  photographerId: string;
+  email: string;
+  businessName: string | null;
+}) {
+  if (input.connectAccountId) {
+    try {
+      const existingAccount = await input.stripe.accounts.retrieve(input.connectAccountId);
+      if (existingAccount.type === "express") {
+        return existingAccount;
+      }
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        !("code" in error) ||
+        error.code !== "resource_missing"
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  return input.stripe.accounts.create({
+    type: "express",
+    email: input.email,
+    business_profile: {
+      name: input.businessName || undefined,
+    },
+    capabilities: {
+      card_payments: { requested: true },
+      transfers: { requested: true },
+    },
+    metadata: {
+      photographer_id: input.photographerId,
+    },
+  });
 }
 
 export async function POST(request: Request) {
@@ -64,20 +102,14 @@ export async function POST(request: Request) {
       .eq("photographer_id", photographer.id)
       .maybeSingle();
 
-    let connectAccountId = billingData?.stripe_connect_account_id || null;
-    if (!connectAccountId) {
-      const account = await stripe.accounts.create({
-        type: "standard",
-        email: photographer.email,
-        business_profile: {
-          name: photographer.name || undefined,
-        },
-        metadata: {
-          photographer_id: photographer.id,
-        },
-      });
-      connectAccountId = account.id;
-    }
+    const connectAccount = await ensureExpressAccount({
+      stripe,
+      connectAccountId: billingData?.stripe_connect_account_id || null,
+      photographerId: photographer.id,
+      email: photographer.email,
+      businessName: photographer.name,
+    });
+    const connectAccountId = connectAccount.id;
 
     const origin = getOriginFromRequest(request);
     const accountLink = await stripe.accountLinks.create({
@@ -85,18 +117,16 @@ export async function POST(request: Request) {
       refresh_url: `${origin}/admin/settings?connect=refresh`,
       return_url: `${origin}/admin/settings?connect=return`,
       type: "account_onboarding",
+      collection_options: {
+        fields: "eventually_due",
+      },
     });
 
-    await admin
-      .from("tenant_billing_accounts")
-      .upsert(
-        {
-          photographer_id: photographer.id,
-          stripe_connect_account_id: connectAccountId,
-          connect_status: "pending",
-        },
-        { onConflict: "photographer_id" }
-      );
+    const syncResult = await syncStripeConnectAccountForPhotographer({
+      photographerId: photographer.id,
+      account: connectAccount,
+      actorUserId: user.id,
+    });
 
     await writeAuditLog({
       photographerId: photographer.id,
@@ -104,7 +134,7 @@ export async function POST(request: Request) {
       action: "connect_onboarding_started",
       resourceType: "tenant_billing_accounts",
       resourceId: connectAccountId,
-      details: { provider: "stripe_connect_standard" },
+      details: { provider: "stripe_connect_express" },
     });
 
     await writeProcessAuditEvent({
@@ -125,7 +155,7 @@ export async function POST(request: Request) {
       url: accountLink.url,
       setupUrl: getStripeConnectSetupUrl(),
       connectAccountId,
-      connectReady: false,
+      connectReady: syncResult.connectStatus === "connected",
       correlationId,
     });
   } catch (error) {

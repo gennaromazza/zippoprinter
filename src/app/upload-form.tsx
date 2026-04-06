@@ -9,7 +9,6 @@ import {
   Check,
   CreditCard,
   ImagePlus,
-  Info,
   Loader2,
   Mail,
   Phone,

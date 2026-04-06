@@ -55,6 +55,17 @@ export type ConnectStatus =
   | "restricted"
   | "disabled";
 
+export type StripeConnectStatusTone = "red" | "orange" | "green";
+
+export interface StripeConnectStatusCard {
+  tone: StripeConnectStatusTone;
+  title: string;
+  message: string;
+  actionLabel: string | null;
+  requirementsCurrentlyDue: number;
+  requirementsDisabledReason: string | null;
+}
+
 export type StudioAccessStatus = "active" | "temporarily_blocked" | "suspended";
 
 export interface TenantBillingAccount {

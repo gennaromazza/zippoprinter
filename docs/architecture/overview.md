@@ -5,7 +5,7 @@
 - Frontend and API: Next.js App Router.
 - Database/Auth/Storage: Supabase.
 - Payments:
-  - Studio customer orders: Stripe Connect Standard (per-tenant connected account).
+  - Studio customer orders: Stripe Connect Express (per-tenant connected account).
   - Platform subscriptions: Stripe platform account.
 - Custom domains: Vercel Domains API.
 

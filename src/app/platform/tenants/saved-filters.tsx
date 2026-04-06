@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bookmark, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,13 +44,9 @@ export function SavedFilters({
   currentFilters: { q: string; subscription: string; connect: string; domain: string };
 }) {
   const router = useRouter();
-  const [presets, setPresets] = useState<FilterPreset[]>([]);
+  const [presets, setPresets] = useState<FilterPreset[]>(() => loadPresets());
   const [showSave, setShowSave] = useState(false);
   const [newName, setNewName] = useState("");
-
-  useEffect(() => {
-    setPresets(loadPresets());
-  }, []);
 
   const hasActiveFilters =
     currentFilters.q || currentFilters.subscription || currentFilters.connect || currentFilters.domain;

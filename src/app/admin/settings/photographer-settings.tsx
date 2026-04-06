@@ -150,6 +150,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
   );
   const [paymentMode, setPaymentMode] = useState(photographer?.payment_mode || "pay_in_store");
   const [stripeModalOpen, setStripeModalOpen] = useState(false);
+  const [stripeEntryState, setStripeEntryState] = useState<"refresh" | "return" | null>(null);
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
   const [depositValue, setDepositValue] = useState(() => {
     if (!photographer?.deposit_value) return "30";
@@ -174,6 +175,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     }
 
     setPaymentMode("online_full");
+    setStripeEntryState(connectState);
     setStripeModalOpen(true);
 
     params.delete("connect");
@@ -1143,7 +1145,15 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
         </form>
       </CardContent>
 
-      <Dialog open={stripeModalOpen} onOpenChange={setStripeModalOpen}>
+      <Dialog
+        open={stripeModalOpen}
+        onOpenChange={(open) => {
+          setStripeModalOpen(open);
+          if (!open) {
+            setStripeEntryState(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-3xl p-0">
           <div className="p-6 md:p-8">
             <DialogHeader>
@@ -1154,7 +1164,10 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
             </DialogHeader>
           </div>
           <div className="px-6 pb-3 md:px-8">
-            <StripeConnectCard />
+            <StripeConnectCard
+              entryState={stripeEntryState}
+              onEntryStateHandled={() => setStripeEntryState(null)}
+            />
           </div>
           <DialogFooter className="px-6 pb-6 md:px-8">
             <Button type="button" variant="outline" onClick={() => setStripeModalOpen(false)}>
