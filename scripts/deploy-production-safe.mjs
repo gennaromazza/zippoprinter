@@ -42,13 +42,13 @@ if (!SKIP_BUILD) {
   });
 }
 
-runCommand(getNpxCommand(), ["vercel", "--prod", "--yes", "--token", token, "--scope", EXPECTED_ORG_ID], {
+runCommand(getNpxCommand(), ["vercel", "--prod", "--yes", "--scope", EXPECTED_ORG_ID], {
   failMessage: "Vercel production deploy failed.",
 });
 
 runCommand(
   getNpxCommand(),
-  ["vercel", "inspect", REQUIRED_ALIAS, "--token", token, "--scope", EXPECTED_ORG_ID],
+  ["vercel", "inspect", REQUIRED_ALIAS, "--scope", EXPECTED_ORG_ID],
   {
     failMessage: `Post-deploy verification failed for alias ${REQUIRED_ALIAS}.`,
   }
@@ -162,23 +162,65 @@ async function fetchWithTeam(pathname) {
 }
 
 function runCommand(command, args, options) {
-  info(`Running: ${command} ${args.join(" ")}`);
-  const result = spawnSync(command, args, {
+  const resolvedCommand = command === "npm" ? getNpmCommand() : command;
+  const safeArgs = sanitizeArgs(args);
+  info(`Running: ${command} ${safeArgs.join(" ")}`);
+  const childOptions = {
     cwd: projectRoot,
     stdio: "inherit",
     env: {
       ...process.env,
       VERCEL_TOKEN: token,
+      VERCEL_ORG_ID: EXPECTED_ORG_ID,
+      VERCEL_PROJECT_ID: EXPECTED_PROJECT_ID,
     },
-  });
+  };
+  const result =
+    process.platform === "win32"
+      ? spawnSync(
+          "cmd.exe",
+          ["/d", "/s", "/c", [resolvedCommand, ...args].map(escapeWindowsArg).join(" ")],
+          childOptions
+        )
+      : spawnSync(resolvedCommand, args, childOptions);
+
+  if (result.error) {
+    fail(`${options.failMessage} ${result.error.message}`);
+  }
 
   if (result.status !== 0) {
-    fail(options.failMessage);
+    fail(`${options.failMessage} Exit code: ${result.status}`);
   }
 }
 
 function getNpxCommand() {
   return process.platform === "win32" ? "npx.cmd" : "npx";
+}
+
+function getNpmCommand() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function sanitizeArgs(args) {
+  const sanitized = [...args];
+  for (let index = 0; index < sanitized.length; index += 1) {
+    if (sanitized[index] === "--token" && index + 1 < sanitized.length) {
+      sanitized[index + 1] = "***";
+      index += 1;
+    }
+  }
+  return sanitized;
+}
+
+function escapeWindowsArg(arg) {
+  const value = String(arg);
+  if (value.length === 0) {
+    return '""';
+  }
+
+  const needsQuotes = /[\s^&|<>()]/.test(value);
+  const escaped = value.replace(/"/g, '\\"');
+  return needsQuotes ? `"${escaped}"` : escaped;
 }
 
 function loadEnvFile(filePath) {
