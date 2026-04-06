@@ -174,6 +174,24 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       return;
     }
 
+    const openedByPopupFlow = Boolean(window.opener && window.opener !== window);
+    if (openedByPopupFlow) {
+      try {
+        window.opener.postMessage(
+          {
+            type: "stripe-connect-onboarding",
+            state: connectState,
+          },
+          window.location.origin
+        );
+      } catch {
+        // noop: fallback to regular in-page flow below when cross-window messaging is blocked
+      }
+
+      window.close();
+      return;
+    }
+
     setPaymentMode("online_full");
     setStripeEntryState(connectState);
     setStripeModalOpen(true);

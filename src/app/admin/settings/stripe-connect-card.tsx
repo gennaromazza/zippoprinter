@@ -30,7 +30,7 @@ interface ConnectStatusResponse {
 
 interface ConnectStartResponse {
   url?: string;
-  setupUrl?: string;
+  platformSetupRequired?: boolean;
   error?: string;
 }
 
@@ -92,6 +92,8 @@ export function StripeConnectCard({
   onEntryStateHandled,
 }: StripeConnectCardProps) {
   const handledEntryStateRef = useRef(false);
+  const onboardingPopupRef = useRef<Window | null>(null);
+  const popupMonitorTimerRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -127,6 +129,34 @@ export function StripeConnectCard({
     }
   };
 
+  const loadStatusEffect = useEffectEvent(async (options?: { successMessage?: string }) => {
+    await loadStatus(options);
+  });
+
+  const clearPopupMonitoring = () => {
+    if (popupMonitorTimerRef.current !== null) {
+      window.clearInterval(popupMonitorTimerRef.current);
+      popupMonitorTimerRef.current = null;
+    }
+    onboardingPopupRef.current = null;
+  };
+
+  const startPopupMonitoring = () => {
+    if (popupMonitorTimerRef.current !== null) {
+      window.clearInterval(popupMonitorTimerRef.current);
+    }
+
+    popupMonitorTimerRef.current = window.setInterval(() => {
+      if (!onboardingPopupRef.current || onboardingPopupRef.current.closed) {
+        clearPopupMonitoring();
+        void loadStatusEffect({
+          successMessage:
+            "Finestra Stripe chiusa. Stato aggiornato automaticamente.",
+        });
+      }
+    }, 1500);
+  };
+
   const handleConnect = async () => {
     setConnecting(true);
     setError("");
@@ -135,27 +165,31 @@ export function StripeConnectCard({
     try {
       const response = await fetch("/api/admin/billing/connect/start", { method: "POST" });
       const payload = await parseJsonSafe<ConnectStartResponse>(response);
-      if (payload.url) {
-        window.location.href = payload.url;
-        return;
-      }
-      if (payload.setupUrl) {
-        window.location.href = payload.setupUrl;
-        return;
-      }
       if (!response.ok) {
         throw new Error(payload.error || "Impossibile avviare onboarding Stripe.");
       }
-      throw new Error("Impossibile avviare onboarding Stripe.");
+
+      if (payload.url) {
+        const popup = window.open(payload.url, "stripe_connect_onboarding", "width=980,height=860");
+        if (!popup) {
+          window.location.href = payload.url;
+          return;
+        }
+
+        onboardingPopupRef.current = popup;
+        startPopupMonitoring();
+        popup.focus();
+        setMessage("Completa Stripe nella nuova finestra: aggiorniamo lo stato in automatico.");
+        setConnecting(false);
+        return;
+      }
+
+      throw new Error("Stripe non ha restituito un link di onboarding valido. Riprova tra qualche secondo.");
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : "Errore connessione Stripe.");
       setConnecting(false);
     }
   };
-
-  const loadStatusEffect = useEffectEvent(async (options?: { successMessage?: string }) => {
-    await loadStatus(options);
-  });
 
   const handleConnectEffect = useEffectEvent(async () => {
     await handleConnect();
@@ -168,6 +202,37 @@ export function StripeConnectCard({
         entryState === "return" ? "Stato Stripe aggiornato dopo il ritorno da Stripe." : undefined,
     });
   }, [entryState]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (!event.data || typeof event.data !== "object") {
+        return;
+      }
+
+      const data = event.data as { type?: string; state?: "refresh" | "return" };
+      if (data.type !== "stripe-connect-onboarding") {
+        return;
+      }
+
+      clearPopupMonitoring();
+      void loadStatusEffect({
+        successMessage:
+          data.state === "refresh"
+            ? "Stripe ha richiesto un nuovo link: stato aggiornato."
+            : "Onboarding Stripe completato. Stato aggiornato automaticamente.",
+      });
+    };
+
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      clearPopupMonitoring();
+    };
+  }, []);
 
   useEffect(() => {
     if (entryState !== "refresh" || loading || connecting || handledEntryStateRef.current) {
@@ -326,9 +391,9 @@ export function StripeConnectCard({
               </p>
             </li>
             <li className="rounded-xl border border-[color:var(--border)] bg-white/70 px-4 py-3">
-              <span className="font-semibold text-foreground">4. Torna qui e aggiorna stato</span>
+              <span className="font-semibold text-foreground">4. Al termine si aggiorna da solo</span>
               <p className="mt-1">
-                Se Stripe richiede altri documenti, vedrai lo stato arancione e potrai riprendere da dove hai lasciato.
+                Quando chiudi la finestra Stripe, la dashboard aggiorna automaticamente lo stato del tuo account.
               </p>
             </li>
           </ol>

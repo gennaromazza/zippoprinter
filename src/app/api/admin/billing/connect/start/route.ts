@@ -4,10 +4,7 @@ import { getAuthenticatedPhotographerContext } from "@/lib/admin-auth";
 import { isSameOriginRequest } from "@/lib/request-security";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe";
-import {
-  getStripeConnectSetupUrl,
-  syncStripeConnectAccountForPhotographer,
-} from "@/lib/stripe-connect";
+import { syncStripeConnectAccountForPhotographer } from "@/lib/stripe-connect";
 import { writeAuditLog } from "@/lib/tenant-billing";
 import { getCorrelationIdFromHeaders, writeProcessAuditEvent } from "@/lib/process-audit";
 
@@ -21,6 +18,25 @@ function getOriginFromRequest(request: Request) {
     return `${forwardedProto || "http"}://${forwardedHost}`;
   }
   return new URL(request.url).origin;
+}
+
+function isPlatformSetupRequiredError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
+
+  return (
+    message.includes("connect platform") ||
+    message.includes("platform profile") ||
+    message.includes("platform account")
+  );
+}
+
+function formatConnectStartError(error: unknown) {
+  if (isPlatformSetupRequiredError(error)) {
+    return "La piattaforma Stripe Connect non e ancora completata dal superadmin. Appena il setup piattaforma e concluso, i fotografi vedranno solo l'onboarding Stripe Express.";
+  }
+
+  return error instanceof Error ? error.message : "Impossibile avviare onboarding Stripe.";
 }
 
 async function ensureExpressAccount(input: {
@@ -153,7 +169,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       url: accountLink.url,
-      setupUrl: getStripeConnectSetupUrl(),
       connectAccountId,
       connectReady: syncResult.connectStatus === "connected",
       correlationId,
@@ -161,11 +176,8 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Impossibile avviare onboarding Stripe.",
-        setupUrl: getStripeConnectSetupUrl(),
+        error: formatConnectStartError(error),
+        platformSetupRequired: isPlatformSetupRequiredError(error),
       },
       { status: 500 }
     );
