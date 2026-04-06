@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, CreditCard, Loader2, Store } from "lucide-react";
+import { CreditCard, Loader2, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getStudioHref } from "@/lib/studio-paths";
@@ -158,17 +158,9 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     }
     return String(photographer.deposit_value);
   });
-  const [copied, setCopied] = useState(false);
   const router = useRouter();
   const supabase = createClient();
-  const publicPath = photographer?.id ? getStudioHref(photographer.id) : "/studio";
-  const publicUrl = publicPath;
-
-  useEffect(() => {
-    if (!copied) return;
-    const timeout = window.setTimeout(() => setCopied(false), 1800);
-    return () => window.clearTimeout(timeout);
-  }, [copied]);
+  const publicUrl = photographer?.id ? getStudioHref(photographer.id) : "/studio";
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -238,17 +230,6 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
           backgroundRepeat: "no-repeat",
         }
       : undefined;
-
-  const handleCopyLink = async () => {
-    try {
-      const absoluteUrl =
-        typeof window !== "undefined" ? `${window.location.origin}${publicPath}` : publicPath;
-      await navigator.clipboard.writeText(absoluteUrl);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -510,20 +491,6 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="rounded-[1.4rem] border border-[color:var(--border)] bg-white/60 px-4 py-3 text-sm leading-6 text-muted-foreground">
-            <p className="font-semibold text-foreground">Pagina cliente dedicata</p>
-            <p className="mt-1 break-all font-medium text-foreground">{publicUrl}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button type="button" variant="outline" size="sm" onClick={handleCopyLink}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? "Copiato" : "Copia link"}
-              </Button>
-              <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                Link pubblico da inviare ai clienti
-              </span>
-            </div>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2">
             <div className="field-shell space-y-2">
               <Label htmlFor="name">Nome studio</Label>

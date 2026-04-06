@@ -2,16 +2,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Download, ExternalLink, Package, Palette, Sparkles, Store } from "lucide-react";
+import { Download, Package, Palette, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { formatCurrency, formatShortDate, getOrderCustomerDisplayName, orderStatusMeta } from "@/lib/orders";
 import { getStudioHref } from "@/lib/studio-paths";
 import { getPaymentModeLabel } from "@/lib/payments";
-import { isSameOriginRequest } from "@/lib/request-security";
 import type { Order, Photographer } from "@/lib/types";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StudioSharePanel } from "@/components/admin/studio-share-panel";
 
 export default async function AdminDashboard() {
   const supabase = await createClient();
@@ -37,16 +36,6 @@ export default async function AdminDashboard() {
   const origin = host ? `${forwardedProto || "http"}://${host}` : process.env.NEXT_PUBLIC_SITE_URL || "";
   const publicUrl = `${origin}${publicPath}`;
 
-  const signOut = async () => {
-    "use server";
-    if (!(await isSameOriginRequest())) {
-      return;
-    }
-    const serverSupabase = await createClient();
-    await serverSupabase.auth.signOut();
-    redirect("/login");
-  };
-
   return (
     <div className="px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -62,6 +51,8 @@ export default async function AdminDashboard() {
           </div>
           <span className="self-start rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-2 text-sm font-semibold text-foreground">{getPaymentModeLabel(photographer.payment_mode || "pay_in_store")}</span>
         </header>
+
+        <StudioSharePanel publicPath={publicPath} publicUrl={publicUrl} />
 
         <section className="grid gap-5 md:grid-cols-3">
           <MetricCard title="Ordini totali" value={String(ordersCount || 0)} text="Volume complessivo registrato per lo studio." />
@@ -92,16 +83,6 @@ export default async function AdminDashboard() {
                 <CardContent className="space-y-3">
                   <p className="text-sm leading-6 text-muted-foreground">Scarica un CSV con email e telefono dei clienti del tuo studio. Apribile direttamente in Excel.</p>
                   <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground"><Download className="h-3.5 w-3.5" />Download CSV</div>
-                </CardContent>
-              </Card>
-            </Link>
-            <Link href={publicPath} target="_blank">
-              <Card className="border-[color:var(--border)] bg-white hover:-translate-y-0.5">
-                <CardHeader><CardDescription>Pagina cliente</CardDescription><CardTitle>Apri vetrina pubblica</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm leading-6 text-muted-foreground">Questo e il link dedicato da condividere ai tuoi clienti.</p>
-                  <div className="rounded-[1.2rem] border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-4 py-3"><p className="break-all text-sm font-medium text-foreground">{publicUrl}</p></div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Store className="h-4 w-4" />Apri storefront<ExternalLink className="h-4 w-4" /></div>
                 </CardContent>
               </Card>
             </Link>
