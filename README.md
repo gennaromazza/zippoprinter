@@ -99,6 +99,8 @@ Variabili ambiente richieste:
 - `STRIPE_SECRET_KEY` se si usa checkout online
 - `STRIPE_WEBHOOK_SECRET` se si usa checkout online
 - `STRIPE_PLATFORM_WEBHOOK_SECRET` per webhook subscription SaaS (piattaforma)
+- `RESEND_API_KEY` per notifiche email transazionali SaaS
+- `RESEND_FROM_EMAIL` mittente notifiche (es. `ZippoPrinter <billing@tuodominio.it>`)
 - `ENABLE_LEGACY_STRIPE_FALLBACK` (`true` durante migrazione Connect, poi `false`)
 - `VERCEL_API_TOKEN` per gestione custom domain BYOD
 - `VERCEL_PROJECT_ID` project id Vercel del deployment
@@ -119,6 +121,7 @@ Variabili ambiente richieste:
 - `DOMAIN_MIN_MARGIN_EUR` (opzionale, default `3.00`)
 - `PHOTO_RETENTION_DAYS` (opzionale, default `10`): giorni dopo cui le foto di ordini `completed` vengono eliminate automaticamente
 - `CRON_SECRET` (consigliato): secret bearer per invocare in sicurezza gli endpoint cron interni
+- `OWNER_STEP_UP_TOKEN` richiesto per azioni owner critiche (override/trial reset/replay/suspend)
 
 Nota Stripe:
 - per idempotenza webhook, creare una tabella `stripe_events` con `event_id` univoco (opzionale ma consigliato).
@@ -158,7 +161,11 @@ Migrazioni Supabase da avere allineate:
 - `supabase/migrations/009_saas_multitenant_foundation_v2.sql`
 - `supabase/migrations/010_platform_owner_dashboard_v1.sql`
 - `supabase/migrations/011_domain_commerce_orders.sql`
+- `supabase/migrations/012_owner_support_v2.sql`
 - `supabase/migrations/013_storefront_branding_v1.sql`
+- `supabase/migrations/014_relax_password_hash_for_supabase_auth.sql`
+- `supabase/migrations/015_order_idempotency_key.sql`
+- `supabase/migrations/016_billing_audit_and_subscription_self_service_v1.sql`
 
 ## Export ordini
 

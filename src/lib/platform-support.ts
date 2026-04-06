@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/tenant-billing";
 import type { StudioAccessStatus } from "@/lib/types";
+import { writeProcessAuditEvent } from "@/lib/process-audit";
 
 const PASSWORD_RESET_COOLDOWN_SECONDS = Number.parseInt(
   process.env.PLATFORM_PASSWORD_RESET_COOLDOWN_SECONDS || "300",
@@ -32,15 +33,19 @@ function isAllowedStatusTransition(
     return false;
   }
 
-  if (next === "suspended") {
-    return false;
-  }
-
   if (current === "active" && next === "temporarily_blocked") {
     return true;
   }
 
   if (current === "temporarily_blocked" && next === "active") {
+    return true;
+  }
+
+  if (current === "active" && next === "suspended") {
+    return true;
+  }
+
+  if (current === "temporarily_blocked" && next === "suspended") {
     return true;
   }
 
@@ -82,6 +87,7 @@ export async function sendOwnerTriggeredPasswordReset(input: {
   photographerId: string;
   actorUserId: string;
   reason: string;
+  correlationId?: string;
 }) {
   const admin = createAdminClient();
   const cooldownSeconds = getSafePositiveInteger(
@@ -193,6 +199,20 @@ export async function sendOwnerTriggeredPasswordReset(input: {
     };
   }
 
+  await writeProcessAuditEvent({
+    actorType: "owner",
+    actorId: input.actorUserId,
+    tenantId: input.photographerId,
+    processArea: "access",
+    action: "owner_password_reset_email_sent",
+    status: "succeeded",
+    correlationId: input.correlationId || crypto.randomUUID(),
+    source: "lib.platform-support",
+    metadata: {
+      reason: input.reason,
+    },
+  });
+
   await insertSupportAction({
     photographerId: input.photographerId,
     actorUserId: input.actorUserId,
@@ -226,6 +246,8 @@ export async function updateStudioAccessStatus(input: {
   actorUserId: string;
   nextStatus: StudioAccessStatus;
   reason: string;
+  correlationId?: string;
+  ticketId?: string;
 }) {
   const admin = createAdminClient();
   const { data: photographer } = await admin
@@ -261,7 +283,7 @@ export async function updateStudioAccessStatus(input: {
       ok: false as const,
       status: 422 as const,
       message:
-        "Transizione stato accesso non consentita. Usa active <-> temporarily_blocked oppure suspended -> active.",
+        "Transizione stato accesso non consentita. Usa active <-> temporarily_blocked, active/temp_blocked -> suspended, suspended -> active.",
     };
   }
 
@@ -297,6 +319,27 @@ export async function updateStudioAccessStatus(input: {
       message: "Aggiornamento stato accesso non riuscito.",
     };
   }
+
+  await writeProcessAuditEvent({
+    actorType: "owner",
+    actorId: input.actorUserId,
+    tenantId: input.photographerId,
+    processArea: input.nextStatus === "suspended" ? "override" : "access",
+    action: "owner_access_status_updated",
+    status: "succeeded",
+    correlationId: input.correlationId || crypto.randomUUID(),
+    source: "lib.platform-support",
+    beforeSnapshot: {
+      accessStatus: currentStatus,
+    },
+    afterSnapshot: {
+      accessStatus: input.nextStatus,
+    },
+    metadata: {
+      reason: input.reason,
+      ticketId: input.ticketId || null,
+    },
+  });
 
   await insertSupportAction({
     photographerId: input.photographerId,

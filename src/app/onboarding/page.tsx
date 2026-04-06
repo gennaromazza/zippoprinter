@@ -21,6 +21,13 @@ import { Label } from "@/components/ui/label";
 
 type OnboardingStep = "studio" | "contacts" | "formats" | "done";
 
+const PHONE_REGEX = /^\+?[\d\s\-().]{6,20}$/;
+
+function isValidPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return PHONE_REGEX.test(value.trim()) && digits.length >= 6;
+}
+
 const STEPS: { key: OnboardingStep; label: string; icon: React.ReactNode }[] = [
   { key: "studio", label: "Studio", icon: <Store className="h-4 w-4" /> },
   { key: "contacts", label: "Contatti", icon: <Phone className="h-4 w-4" /> },
@@ -90,6 +97,14 @@ export default function OnboardingPage() {
   const handleProvisionStudio = useCallback(async () => {
     if (!studioName.trim()) {
       setError("Inserisci il nome del tuo studio.");
+      return;
+    }
+    if (phone && !isValidPhone(phone)) {
+      setError("Numero di telefono non valido (es. +39 333 1234567).");
+      return;
+    }
+    if (whatsapp && !isValidPhone(whatsapp)) {
+      setError("Numero WhatsApp non valido (es. +39 333 1234567).");
       return;
     }
 

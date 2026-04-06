@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCheckoutAmounts, getPhotographerPaymentMode, requiresOnlinePayment } from "@/lib/payments";
+import { getCheckoutAmounts, getPhotographerPaymentMode, prefersOnlinePayment, requiresOnlinePayment } from "@/lib/payments";
 import { getUnitPriceForQuantity } from "@/lib/pricing";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getConnectedStripeClientForTenant, getStripeClient } from "@/lib/stripe";
@@ -30,6 +30,7 @@ const MAX_MANIFEST_ITEMS = 50;
 const MAX_FILENAME_LENGTH = 120;
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 const MIN_PHONE_LENGTH = 6;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -76,6 +77,13 @@ export async function POST(request: Request) {
   const uploadedStoragePaths: string[] = [];
 
   try {
+    // Basic bot/CSRF mitigation: require an Origin or Referer header (browsers always send one)
+    const requestHeaderOrigin = request.headers.get("origin");
+    const referer = request.headers.get("referer");
+    if (!requestHeaderOrigin && !referer) {
+      return NextResponse.json({ error: "Richiesta non valida." }, { status: 403 });
+    }
+
     const rl = rateLimit(request, { key: "public-orders", limit: 10, windowMs: 60_000 });
     if (!rl.ok) {
       return NextResponse.json({ error: "Troppi tentativi. Riprova tra un minuto." }, { status: 429 });
@@ -88,6 +96,7 @@ export async function POST(request: Request) {
     let customerFirstName = "";
     let customerLastName = "";
     let customerPhone = "";
+    let idempotencyKey = "";
     let manifestInput = "[]";
     let formData: FormData | null = null;
 
@@ -98,6 +107,7 @@ export async function POST(request: Request) {
       customerFirstName = String(formData.get("customerFirstName") || "").trim();
       customerLastName = String(formData.get("customerLastName") || "").trim();
       customerPhone = String(formData.get("customerPhone") || "").trim();
+      idempotencyKey = String(formData.get("idempotencyKey") || "").trim();
       manifestInput = String(formData.get("manifest") || "[]");
     } else {
       const body = (await request.json()) as {
@@ -106,6 +116,7 @@ export async function POST(request: Request) {
         customerFirstName?: string;
         customerLastName?: string;
         customerPhone?: string;
+        idempotencyKey?: string;
         manifest?: ManifestItem[];
       };
 
@@ -114,6 +125,7 @@ export async function POST(request: Request) {
       customerFirstName = String(body.customerFirstName || "").trim();
       customerLastName = String(body.customerLastName || "").trim();
       customerPhone = String(body.customerPhone || "").trim();
+      idempotencyKey = String(body.idempotencyKey || "").trim();
       manifestInput = JSON.stringify(body.manifest || []);
     }
 
@@ -137,6 +149,9 @@ export async function POST(request: Request) {
     }
     if (customerPhone.replace(/\s+/g, "").length < MIN_PHONE_LENGTH) {
       return NextResponse.json({ error: "Numero di telefono non valido." }, { status: 400 });
+    }
+    if (!EMAIL_REGEX.test(customerEmail)) {
+      return NextResponse.json({ error: "Indirizzo email non valido." }, { status: 400 });
     }
     if (manifest.length > MAX_MANIFEST_ITEMS) {
       return NextResponse.json({ error: "Troppe immagini in un solo ordine." }, { status: 400 });
@@ -219,7 +234,6 @@ export async function POST(request: Request) {
     if (totalCents <= 0) {
       throw new Error("Totale ordine non valido.");
     }
-    const paymentPlan = getCheckoutAmounts(totalCents, photographer);
     const paymentMode = getPhotographerPaymentMode(photographer);
     const billingContext = await getTenantBillingContext(photographerId);
     const connectClient = getConnectedStripeClientForTenant(
@@ -233,11 +247,18 @@ export async function POST(request: Request) {
       process.env.ENABLE_LEGACY_STRIPE_FALLBACK === "true" &&
       (billingContext.billingAccount?.legacy_checkout_enabled ?? true);
     const billingMode = connectReady ? "connect" : legacyFallbackEnabled ? "legacy_fallback" : "disabled";
+    const stripeAvailable = connectReady || legacyFallbackEnabled;
+    const paymentPlan = getCheckoutAmounts(totalCents, photographer, { stripeAvailable });
 
     if (requiresOnlinePayment(paymentMode) && paymentPlan.dueNowCents <= 0) {
       throw new Error("Configurazione pagamento non valida: importo online uguale a zero.");
     }
     if (requiresOnlinePayment(paymentMode) && !connectReady && !legacyFallbackEnabled) {
+      throw new Error(
+        "Questo studio non ha ancora completato la configurazione pagamenti online."
+      );
+    }
+    if (prefersOnlinePayment(paymentMode) && paymentPlan.dueNowCents > 0 && !connectReady && !legacyFallbackEnabled) {
       throw new Error(
         "Questo studio non ha ancora completato la configurazione pagamenti online."
       );
@@ -288,6 +309,21 @@ export async function POST(request: Request) {
       customerId = (createdCustomer as CustomerProfileRecord).id;
     }
 
+    // Idempotency check: if the client re-submits the same order, return the existing one
+    if (idempotencyKey) {
+      const { data: existingOrder } = await admin
+        .from("orders")
+        .select("id, status")
+        .eq("photographer_id", photographerId)
+        .eq("customer_email", customerEmail)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+
+      if (existingOrder) {
+        return NextResponse.json({ orderId: existingOrder.id, paymentRequired: false });
+      }
+    }
+
     const baseOrderPayload = {
       photographer_id: photographerId,
       customer_id: customerId,
@@ -298,6 +334,7 @@ export async function POST(request: Request) {
       customer_phone: customerPhone || null,
       status: "pending",
       total_cents: totalCents,
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
     };
 
     let createOrderResponse = await admin
@@ -392,12 +429,29 @@ export async function POST(request: Request) {
       throw new Error("Non e stato possibile salvare le immagini dell'ordine.");
     }
 
-    if (!requiresOnlinePayment(paymentMode)) {
+    if (!requiresOnlinePayment(paymentMode) && !prefersOnlinePayment(paymentMode)) {
       return NextResponse.json({
         mode: paymentMode,
         orderId: createdOrder.id,
         paymentRequired: false,
         paymentStatus: "not_required",
+        connectReady,
+        billingMode,
+        fallbackUsed: false,
+        capabilities: {
+          onlinePaymentsEnabled: canUseOnlinePayments(billingContext),
+          customDomainEnabled: Boolean(billingContext.entitlements?.can_use_custom_domain),
+        },
+      });
+    }
+
+    // deposit_plus_studio without Stripe: fall back to in-store deposit collection
+    if (prefersOnlinePayment(paymentMode) && !connectReady && !legacyFallbackEnabled) {
+      return NextResponse.json({
+        mode: paymentMode,
+        orderId: createdOrder.id,
+        paymentRequired: false,
+        paymentStatus: "unpaid",
         connectReady,
         billingMode,
         fallbackUsed: false,
@@ -415,12 +469,12 @@ export async function POST(request: Request) {
       throw new Error("Stripe non e configurato per questo ambiente.");
     }
 
-    const origin = getRequestOrigin(request);
+    const requestOrigin = getRequestOrigin(request);
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: customerEmail,
-      success_url: `${origin}/studio/${photographerId}/checkout/success?order=${createdOrder.id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/studio/${photographerId}/checkout/cancelled?order=${createdOrder.id}`,
+      success_url: `${requestOrigin}/studio/${photographerId}/checkout/success?order=${createdOrder.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${requestOrigin}/studio/${photographerId}/checkout/cancelled?order=${createdOrder.id}`,
       metadata: {
         order_id: createdOrder.id,
         photographer_id: photographerId,

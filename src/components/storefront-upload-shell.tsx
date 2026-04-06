@@ -30,5 +30,19 @@ export function StorefrontUploadShell({
   photographer,
   stripeEnabled,
 }: StorefrontUploadShellProps) {
+  if (formats.length === 0) {
+    return (
+      <section className="glass-panel rounded-[1.95rem] p-5 text-center md:p-8">
+        <p className="section-kicker mx-auto mb-3 justify-center">Studio in configurazione</p>
+        <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
+          Lo studio non ha ancora configurato i formati di stampa
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
+          Torna a trovarci tra poco: il fotografo sta completando la configurazione del catalogo.
+        </p>
+      </section>
+    );
+  }
+
   return <UploadForm formats={formats} photographer={photographer} stripeEnabled={stripeEnabled} />;
 }

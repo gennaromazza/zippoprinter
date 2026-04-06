@@ -3,14 +3,17 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   Check,
   CreditCard,
   ImagePlus,
+  Info,
   Loader2,
   Mail,
   Phone,
+  ShieldCheck,
   Store,
   Trash2,
   UserRound,
@@ -65,6 +68,19 @@ const PHOTO_MIN_HEIGHT = 800;
 const PHOTO_MAX_SOURCE_WIDTH = 12000;
 const PHOTO_MAX_SOURCE_HEIGHT = 12000;
 const PHOTO_MAX_OUTPUT_DIMENSION = 4096;
+const MAX_PHOTOS_PER_ORDER = 500;
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_REGEX = /^\+?[\d\s\-().]{6,20}$/;
+
+function isValidEmail(value: string) {
+  return EMAIL_REGEX.test(value.trim());
+}
+
+function isValidPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return PHONE_REGEX.test(value.trim()) && digits.length >= 6;
+}
 
 function formatMegabytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -160,33 +176,53 @@ function StepDot({
   active,
   complete,
   title,
+  isLast = false,
 }: {
   number: number;
   active: boolean;
   complete: boolean;
   title: string;
+  isLast?: boolean;
 }) {
   return (
-    <div className="flex min-w-[10rem] items-center gap-3">
-      <div
-        className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold ${
-          complete
-            ? "border-primary bg-primary text-primary-foreground"
-            : active
-              ? "border-primary bg-white text-primary"
-              : "border-[color:var(--border)] bg-[color:var(--muted)]/55 text-muted-foreground"
-        }`}
-      >
-        {complete ? <Check className="h-4 w-4" /> : number}
+    <div className="flex items-center gap-0 flex-1 min-w-0">
+      <div className="flex shrink-0 items-center gap-2.5">
+        <div
+          className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-bold transition-all duration-300 ${
+            complete
+              ? "border-primary bg-primary text-primary-foreground shadow-[0_4px_14px_rgba(217,121,66,0.3)]"
+              : active
+                ? "border-primary bg-white text-primary shadow-[0_0_0_4px_rgba(217,121,66,0.12),0_4px_14px_rgba(217,121,66,0.15)]"
+                : "border-[color:var(--border)] bg-[color:var(--muted)]/40 text-muted-foreground"
+          }`}
+        >
+          {complete ? <Check className="h-4 w-4" strokeWidth={3} /> : number}
+          {active && (
+            <span className="absolute inset-0 animate-ping rounded-full border-2 border-primary opacity-20" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className={`text-[0.68rem] font-bold uppercase tracking-[0.16em] transition-colors duration-200 ${
+            active ? "text-primary" : "text-muted-foreground/70"
+          }`}>
+            Step {number}
+          </p>
+          <p className={`text-sm font-semibold transition-colors duration-200 ${
+            active ? "text-foreground" : complete ? "text-foreground/70" : "text-muted-foreground"
+          }`}>
+            {title}
+          </p>
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Step {number}
-        </p>
-        <p className={`text-sm font-medium ${active ? "text-foreground" : "text-muted-foreground"}`}>
-          {title}
-        </p>
-      </div>
+      {!isLast && (
+        <div className="mx-3 h-[2px] flex-1 rounded-full bg-[color:var(--border)] overflow-hidden">
+          <div
+            className={`h-full rounded-full bg-primary transition-all duration-500 ease-out ${
+              complete ? "w-full" : "w-0"
+            }`}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -237,9 +273,12 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const [step, setStep] = useState<WizardStep>("customer");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [uploadWarningMessage, setUploadWarningMessage] = useState("");
   const [uploadInfoMessage, setUploadInfoMessage] = useState("");
   const [successOrderId, setSuccessOrderId] = useState("");
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<PhotoSelection[]>([]);
 
@@ -249,8 +288,8 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   );
   const totalCents = useMemo(() => computeTotal(photos, formats), [photos, formats]);
   const paymentPlan = useMemo(
-    () => getCheckoutAmounts(totalCents, photographer),
-    [totalCents, photographer]
+    () => getCheckoutAmounts(totalCents, photographer, { stripeAvailable: stripeEnabled }),
+    [totalCents, photographer, stripeEnabled]
   );
   const depositPolicyLabel = useMemo(() => {
     if (paymentPlan.mode !== "deposit_plus_studio") {
@@ -279,10 +318,12 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     Boolean(customerEmail.trim()) &&
     Boolean(customerFirstName.trim()) &&
     Boolean(customerLastName.trim()) &&
-    Boolean(customerPhone.trim());
+    Boolean(customerPhone.trim()) &&
+    isValidEmail(customerEmail) &&
+    isValidPhone(customerPhone);
   const canMoveToFormat = photos.length > 0 && formats.length > 0;
   const canCheckout = photos.length > 0 && allFormatsAssigned;
-  const paymentBlocked = paymentPlan.mode !== "pay_in_store" && !stripeEnabled;
+  const paymentBlocked = paymentPlan.mode === "online_full" && !stripeEnabled;
   const stepOrder: ActiveWizardStep[] = ["customer", "upload", "format", "checkout"];
   const stepTitles: Record<ActiveWizardStep, string> = {
     customer: "Dati cliente",
@@ -336,15 +377,30 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
       return;
     }
 
+    const remainingSlots = MAX_PHOTOS_PER_ORDER - photos.length;
+    if (remainingSlots <= 0) {
+      setUploadWarningMessage(`Hai raggiunto il limite massimo di ${MAX_PHOTOS_PER_ORDER} foto per ordine.`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    const filesToProcess = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      setUploadWarningMessage(
+        `Puoi aggiungere ancora ${remainingSlots} foto (limite: ${MAX_PHOTOS_PER_ORDER}). ${files.length - remainingSlots} file ignorati.`
+      );
+    } else {
+      setUploadWarningMessage("");
+    }
+
     setErrorMessage("");
-    setUploadWarningMessage("");
     setUploadInfoMessage("");
 
     const rejectedMessages: string[] = [];
     const compressedMessages: string[] = [];
     const acceptedPhotos: PhotoSelection[] = [];
 
-    for (const originalFile of files) {
+    for (const originalFile of filesToProcess) {
       if (!originalFile.type.startsWith("image/")) {
         rejectedMessages.push(`${originalFile.name}: formato non supportato.`);
         continue;
@@ -539,6 +595,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           photographerId: photographer.id,
+          idempotencyKey: idempotencyKeyRef.current,
           customerEmail: customerEmail.trim(),
           customerFirstName: customerFirstName.trim(),
           customerLastName: customerLastName.trim(),
@@ -600,25 +657,31 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   }
 
   return (
-    <section className="space-y-4 pb-6 md:pb-8">
-      <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] md:sticky md:top-4 md:z-20 md:backdrop-blur md:px-6">
+    <section className="space-y-5 pb-6 md:pb-8">
+      <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] md:sticky md:top-4 md:z-20 md:backdrop-blur-lg md:px-6">
         <div className="flex items-center justify-between md:hidden">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="flex-1">
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-primary">
               Step {currentStepIndex + 1} di {stepOrder.length}
             </p>
-            <p className="mt-1 text-sm font-semibold text-foreground">{currentStepTitle}</p>
+            <p className="mt-0.5 text-sm font-semibold text-foreground">{currentStepTitle}</p>
           </div>
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <span className="text-xs font-bold tabular-nums text-primary">
             {Math.round(((currentStepIndex + 1) / stepOrder.length) * 100)}%
           </span>
         </div>
-        <div className="hidden gap-4 overflow-x-auto pb-1 md:flex">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--muted)]/60 md:hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-primary to-[#e8935a] transition-all duration-500 ease-out"
+            style={{ width: `${((currentStepIndex + 1) / stepOrder.length) * 100}%` }}
+          />
+        </div>
+        <div className="hidden gap-0 overflow-x-auto pb-1 md:flex">
           <StepDot number={1} title="Dati cliente" active={step === "customer"} complete={step !== "customer"} />
           <StepDot number={2} title="Caricamento foto" active={step === "upload"} complete={step === "format" || step === "checkout"} />
           <StepDot number={3} title="Formati" active={step === "format"} complete={step === "checkout"} />
           <StepDot number={4} title="Checkout" active={step === "checkout"} complete={false} />
-          <StepDot number={5} title="Conferma" active={false} complete={false} />
+          <StepDot number={5} title="Conferma" active={false} complete={false} isLast />
         </div>
       </div>
 
@@ -639,25 +702,62 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               </Field>
             </div>
 
-            <Field icon={<Mail className="h-4 w-4 text-muted-foreground" />} label="Email">
-              <Input id="customer-email" type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="nome@email.com" required />
+            <Field icon={<Mail className="h-4 w-4 text-muted-foreground" />} label="Email" error={emailError}>
+              <Input
+                id="customer-email"
+                type="email"
+                value={customerEmail}
+                onChange={(event) => {
+                  setCustomerEmail(event.target.value);
+                  if (emailError) setEmailError("");
+                }}
+                onBlur={() => {
+                  if (customerEmail.trim() && !isValidEmail(customerEmail)) {
+                    setEmailError("Inserisci un indirizzo email valido.");
+                  } else {
+                    setEmailError("");
+                  }
+                }}
+                placeholder="nome@email.com"
+                required
+              />
             </Field>
 
-            <Field icon={<Phone className="h-4 w-4 text-muted-foreground" />} label="Telefono">
+            <Field icon={<Phone className="h-4 w-4 text-muted-foreground" />} label="Telefono" error={phoneError}>
               <Input
                 id="customer-phone"
+                type="tel"
                 value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
+                onChange={(event) => {
+                  setCustomerPhone(event.target.value);
+                  if (phoneError) setPhoneError("");
+                }}
+                onBlur={() => {
+                  if (customerPhone.trim() && !isValidPhone(customerPhone)) {
+                    setPhoneError("Numero non valido — usa il formato +39 333 1234567");
+                  } else {
+                    setPhoneError("");
+                  }
+                }}
                 placeholder="+39 333 1234567"
                 required
               />
             </Field>
 
-            <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-4">
-              <p className="text-sm font-semibold text-foreground">Anagrafica cliente per lo studio</p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                I dati raccolti restano associati allo studio corretto, cosi l&apos;admin puo consultare storico ordini e contatti del proprio tenant.
-              </p>
+            <div className="relative overflow-hidden rounded-[1.5rem] border border-primary/15 bg-gradient-to-br from-[color:var(--accent)] to-white p-5">
+              <div className="relative z-10 flex items-start gap-3.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <ShieldCheck className="h-4.5 w-4.5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">I tuoi dati sono al sicuro</p>
+                  <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+                    Le informazioni raccolte restano associate esclusivamente allo studio e vengono utilizzate solo per gestire i tuoi ordini.
+                  </p>
+                </div>
+              </div>
+              <div className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-primary/[0.04]" />
+              <div className="absolute -top-4 -right-4 h-16 w-16 rounded-full bg-primary/[0.03]" />
             </div>
 
             {errorMessage && <ErrorBanner message={errorMessage} />}
@@ -981,8 +1081,10 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                   </>
                 ) : paymentPlan.mode === "online_full" ? (
                   "Vai al pagamento sicuro"
-                ) : paymentPlan.mode === "deposit_plus_studio" ? (
+                ) : paymentPlan.mode === "deposit_plus_studio" && stripeEnabled ? (
                   "Paga l'acconto online"
+                ) : paymentPlan.mode === "deposit_plus_studio" && !stripeEnabled ? (
+                  "Invia ordine allo studio"
                 ) : (
                   "Invia ordine allo studio"
                 )}
@@ -1029,15 +1131,18 @@ function Panel({
   centered?: boolean;
 }) {
   return (
-    <section className="rounded-[1.9rem] border border-[color:var(--border)] bg-white p-5 shadow-[var(--shadow-sm)] md:p-6">
-      <div className={`mb-5 flex flex-col gap-2 ${centered ? "text-center" : "md:flex-row md:items-start md:justify-between"}`}>
-        <div className={centered ? "mx-auto max-w-2xl" : ""}>
-          <p className={`section-kicker mb-2 ${centered ? "justify-center" : ""}`}>{title}</p>
-          <h2 className="text-2xl font-semibold tracking-tight md:text-[2rem]">{headline}</h2>
+    <section className="relative overflow-hidden rounded-[1.9rem] border border-[color:var(--border)] bg-white shadow-[var(--shadow-sm)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-[color:var(--accent)]/35 to-transparent" />
+      <div className="relative z-10 p-5 md:p-6">
+        <div className={`mb-5 flex flex-col gap-2 ${centered ? "text-center" : "md:flex-row md:items-start md:justify-between"}`}>
+          <div className={centered ? "mx-auto max-w-2xl" : ""}>
+            <p className={`section-kicker mb-2 ${centered ? "justify-center" : ""}`}>{title}</p>
+            <h2 className="text-2xl font-semibold tracking-tight md:text-[2rem]">{headline}</h2>
+          </div>
+          <p className={`text-sm leading-6 text-muted-foreground ${centered ? "mx-auto max-w-2xl" : "max-w-sm"}`}>{note}</p>
         </div>
-        <p className={`text-sm leading-6 text-muted-foreground ${centered ? "mx-auto max-w-2xl" : "max-w-sm"}`}>{note}</p>
+        {children}
       </div>
-      {children}
     </section>
   );
 }
@@ -1046,18 +1151,25 @@ function Field({
   label,
   icon,
   children,
+  error,
 }: {
   label: string;
   icon: ReactNode;
   children: ReactNode;
+  error?: string;
 }) {
   return (
-    <div className="field-shell space-y-2">
+    <div className={`field-shell space-y-2 transition-all duration-200 ${error ? "field-error" : ""}`}>
       <Label>{label}</Label>
       <div className="flex items-center gap-3">
-        {icon}
+        {error ? <AlertCircle className="h-4 w-4 text-red-500 shrink-0" /> : icon}
         {children}
       </div>
+      {error && (
+        <p className="field-hint-enter flex items-center gap-1.5 text-[0.8rem] leading-snug text-red-600/90 font-medium">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

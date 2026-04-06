@@ -2,13 +2,19 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { PlatformAdmin } from "@/lib/types";
+import type { PlatformAdmin, PlatformAdminRole } from "@/lib/types";
 
 export interface PlatformAdminContext {
   userId: string;
   userEmail: string | null;
   admin: PlatformAdmin;
 }
+
+const ROLE_RANK: Record<PlatformAdminRole, number> = {
+  owner_readonly: 1,
+  owner_support: 2,
+  owner_admin: 3,
+};
 
 export function isPlatformDashboardEnabled() {
   if (process.env.ENABLE_PLATFORM_DASHBOARD === "true") {
@@ -52,6 +58,16 @@ export async function getPlatformAdminContext() {
       admin: data as PlatformAdmin,
     },
   };
+}
+
+export function hasPlatformRole(
+  role: PlatformAdminRole | null | undefined,
+  minimum: PlatformAdminRole
+) {
+  if (!role) {
+    return false;
+  }
+  return ROLE_RANK[role] >= ROLE_RANK[minimum];
 }
 
 export async function isPlatformAdminUser(userId: string) {

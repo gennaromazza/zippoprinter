@@ -1088,6 +1088,10 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
             </div>
 
             {paymentMode === "deposit_plus_studio" && (
+              <>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Se Stripe non è configurato, l&apos;acconto verrà gestito manualmente in studio.
+              </p>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="field-shell space-y-2">
                   <Label htmlFor="deposit_type">Tipo acconto</Label>
@@ -1121,6 +1125,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                   />
                 </div>
               </div>
+              </>
             )}
 
             {paymentMode === "online_full" && (

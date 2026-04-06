@@ -7,7 +7,11 @@ export function getPhotographerPaymentMode(photographer: Photographer | null | u
 }
 
 export function requiresOnlinePayment(mode: PaymentMode) {
-  return mode === "online_full" || mode === "deposit_plus_studio";
+  return mode === "online_full";
+}
+
+export function prefersOnlinePayment(mode: PaymentMode) {
+  return mode === "deposit_plus_studio";
 }
 
 export function getPaymentModeLabel(mode: PaymentMode) {
@@ -48,8 +52,13 @@ export function getDepositAmountCents(
   return clampAmount(Math.round((totalCents * rawValue) / 100), 100, totalCents);
 }
 
-export function getCheckoutAmounts(totalCents: number, photographer: Photographer | null | undefined) {
+export function getCheckoutAmounts(
+  totalCents: number,
+  photographer: Photographer | null | undefined,
+  options?: { stripeAvailable?: boolean },
+) {
   const mode = getPhotographerPaymentMode(photographer);
+  const stripeAvailable = options?.stripeAvailable ?? true;
 
   if (mode === "pay_in_store") {
     return {
@@ -62,11 +71,20 @@ export function getCheckoutAmounts(totalCents: number, photographer: Photographe
   }
 
   if (mode === "deposit_plus_studio") {
-    const dueNowCents = getDepositAmountCents(totalCents, photographer);
+    const depositCents = getDepositAmountCents(totalCents, photographer);
+    if (!stripeAvailable) {
+      return {
+        mode,
+        dueNowCents: 0,
+        remainingCents: totalCents,
+        title: "Acconto in studio",
+        description: `Invia l'ordine e versa l'acconto di ${formatCentsForDescription(depositCents)} direttamente in studio.`,
+      };
+    }
     return {
       mode,
-      dueNowCents,
-      remainingCents: Math.max(totalCents - dueNowCents, 0),
+      dueNowCents: depositCents,
+      remainingCents: Math.max(totalCents - depositCents, 0),
       title: "Acconto online",
       description: "Blocca l'ordine con un acconto adesso e salda il resto direttamente in studio.",
     };
@@ -79,6 +97,10 @@ export function getCheckoutAmounts(totalCents: number, photographer: Photographe
     title: "Pagamento online completo",
     description: "Completa il pagamento adesso per confermare l'ordine allo studio.",
   };
+}
+
+function formatCentsForDescription(cents: number) {
+  return (cents / 100).toFixed(2).replace(".", ",") + " \u20AC";
 }
 
 export function getOrderPaymentHeadline(order: Pick<Order, "payment_mode_snapshot" | "payment_status">) {

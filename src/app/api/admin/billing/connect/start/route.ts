@@ -4,6 +4,7 @@ import { isSameOriginRequest } from "@/lib/request-security";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe";
 import { writeAuditLog } from "@/lib/tenant-billing";
+import { getCorrelationIdFromHeaders, writeProcessAuditEvent } from "@/lib/process-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ function getOriginFromRequest(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const correlationId = getCorrelationIdFromHeaders(request.headers);
     if (!(await isSameOriginRequest())) {
       return NextResponse.json({ error: "Richiesta non valida." }, { status: 403 });
     }
@@ -38,6 +40,17 @@ export async function POST(request: Request) {
     if (!photographer) {
       return NextResponse.json({ error: "Profilo studio non trovato." }, { status: 404 });
     }
+
+    await writeProcessAuditEvent({
+      actorType: "tenant",
+      actorId: user.id,
+      tenantId: photographer.id,
+      processArea: "subscription",
+      action: "connect_onboarding_started",
+      status: "started",
+      correlationId,
+      source: "api.admin.billing.connect.start",
+    });
 
     const stripe = getStripeClient();
     if (!stripe) {
@@ -94,11 +107,26 @@ export async function POST(request: Request) {
       details: { provider: "stripe_connect_standard" },
     });
 
+    await writeProcessAuditEvent({
+      actorType: "tenant",
+      actorId: user.id,
+      tenantId: photographer.id,
+      processArea: "subscription",
+      action: "connect_onboarding_started",
+      status: "succeeded",
+      correlationId,
+      source: "api.admin.billing.connect.start",
+      afterSnapshot: {
+        connectAccountId,
+      },
+    });
+
     return NextResponse.json({
       url: accountLink.url,
       setupUrl: getStripeConnectSetupUrl(),
       connectAccountId,
       connectReady: false,
+      correlationId,
     });
   } catch (error) {
     return NextResponse.json(

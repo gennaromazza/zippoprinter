@@ -29,10 +29,15 @@ interface CustomerStats {
 }
 
 function escapeCsvCell(value: string) {
-  if (value.includes(",") || value.includes("\"") || value.includes("\n") || value.includes("\r")) {
-    return `"${value.replace(/"/g, "\"\"")}"`;
+  // Strip leading formula-trigger characters to prevent CSV injection in Excel
+  let safe = value;
+  while (/^[=+\-@\t\r]/.test(safe)) {
+    safe = safe.slice(1);
   }
-  return value;
+  if (safe.includes(",") || safe.includes("\"") || safe.includes("\n") || safe.includes("\r")) {
+    return `"${safe.replace(/"/g, "\"\"")}"`;
+  }
+  return safe;
 }
 
 function toIsoDate(value: string | null) {

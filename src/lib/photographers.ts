@@ -39,78 +39,54 @@ export const getCurrentPhotographerForUser = cache(
   async (user: Pick<User, "id" | "email">): Promise<Photographer | null> => {
     const admin = createAdminClient();
 
-    const { data: photographersData } = await admin
+    // 1. Direct lookup by auth_user_id (most common path for linked users)
+    const { data: linkedData } = await admin
       .from("photographers")
       .select("*")
-      .order("created_at", { ascending: true });
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
 
-    const photographers = (photographersData as Photographer[] | null) ?? [];
-
-    const linkedPhotographer = photographers.find(
-      (photographer) => photographer.auth_user_id === user.id
-    );
-
-    if (linkedPhotographer) {
-      return ensurePhotographerHasActiveAccess(admin, linkedPhotographer);
+    if (linkedData) {
+      return ensurePhotographerHasActiveAccess(admin, linkedData as Photographer);
     }
 
+    // 2. Fallback: match by email and claim if unclaimed
     if (user.email) {
-      const emailMatchedPhotographer = photographers.find(
-        (photographer) => photographer.email.toLowerCase() === user.email?.toLowerCase()
-      );
+      const { data: emailData } = await admin
+        .from("photographers")
+        .select("*")
+        .ilike("email", user.email)
+        .is("auth_user_id", null)
+        .maybeSingle();
 
-      if (emailMatchedPhotographer) {
-        if (Object.prototype.hasOwnProperty.call(emailMatchedPhotographer, "auth_user_id") && !emailMatchedPhotographer.auth_user_id) {
-          const { data: claimedByEmail } = await admin
-            .from("photographers")
-            .update({ auth_user_id: user.id })
-            .eq("id", emailMatchedPhotographer.id)
-            .is("auth_user_id", null)
-            .select("*")
-            .maybeSingle();
+      if (emailData) {
+        const { data: claimedByEmail } = await admin
+          .from("photographers")
+          .update({ auth_user_id: user.id })
+          .eq("id", emailData.id)
+          .is("auth_user_id", null)
+          .select("*")
+          .maybeSingle();
 
-          return ensurePhotographerHasActiveAccess(
-            admin,
-            (claimedByEmail || {
-              ...emailMatchedPhotographer,
-              auth_user_id: user.id,
-            }) as Photographer
-          );
-        }
+        return ensurePhotographerHasActiveAccess(
+          admin,
+          (claimedByEmail || { ...emailData, auth_user_id: user.id }) as Photographer
+        );
+      }
 
-        return ensurePhotographerHasActiveAccess(admin, emailMatchedPhotographer);
+      // Email exists but already claimed by another user
+      const { data: emailOwnedData } = await admin
+        .from("photographers")
+        .select("*")
+        .ilike("email", user.email)
+        .maybeSingle();
+
+      if (emailOwnedData) {
+        return ensurePhotographerHasActiveAccess(admin, emailOwnedData as Photographer);
       }
     }
 
-    if (photographers.length !== 1) {
-      return null;
-    }
-
-    const [onlyPhotographer] = photographers;
-
-    if (!Object.prototype.hasOwnProperty.call(onlyPhotographer, "auth_user_id")) {
-      return ensurePhotographerHasActiveAccess(admin, onlyPhotographer);
-    }
-
-    if (onlyPhotographer.auth_user_id) {
-      return null;
-    }
-
-    const { data: claimedPhotographer } = await admin
-      .from("photographers")
-      .update({ auth_user_id: user.id })
-      .eq("id", onlyPhotographer.id)
-      .is("auth_user_id", null)
-      .select("*")
-      .maybeSingle();
-
-    return ensurePhotographerHasActiveAccess(
-      admin,
-      (claimedPhotographer || {
-        ...onlyPhotographer,
-        auth_user_id: user.id,
-      }) as Photographer
-    );
+    return null;
   }
 );
 
@@ -129,6 +105,15 @@ export async function getStorefrontByPhotographerId(
     return null;
   }
 
+  // Block storefront for suspended/blocked studios
+  const checkedPhotographer = await ensurePhotographerHasActiveAccess(
+    admin,
+    photographerData as Photographer
+  );
+  if (!checkedPhotographer) {
+    return null;
+  }
+
   const { data: formatsData } = await admin
     .from("print_formats")
     .select("*")
@@ -137,7 +122,7 @@ export async function getStorefrontByPhotographerId(
     .order("sort_order", { ascending: true });
 
   return {
-    photographer: photographerData as Photographer,
+    photographer: checkedPhotographer,
     formats: (formatsData as PrintFormat[] | null) ?? [],
   };
 }

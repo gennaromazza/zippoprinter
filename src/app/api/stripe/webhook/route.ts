@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient, getStripeWebhookSecrets } from "@/lib/stripe";
+import { writeProcessAuditEvent } from "@/lib/process-audit";
+import { sendBillingNotification } from "@/lib/email-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,7 +102,8 @@ async function applyPaymentToOrder(params: {
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const orderId = session.metadata?.order_id;
   if (!orderId) {
-    return { ok: false, status: 400, message: "Missing order_id metadata." };
+    // Non-order checkout (es. subscription SaaS): ignore here, lifecycle handled by subscription/invoice events.
+    return { ok: true, status: 200, message: "Ignored non-order checkout session." };
   }
 
   return applyPaymentToOrder({
@@ -170,11 +173,19 @@ async function upsertTenantSubscriptionFromStripe(subscription: Stripe.Subscript
   const periodStart = (subscription as unknown as { current_period_start?: number })
     .current_period_start;
   const periodEnd = (subscription as unknown as { current_period_end?: number }).current_period_end;
+  const nextPlanId = subscription.metadata?.subscription_plan_id || null;
 
   const admin = createAdminClient();
+  const { data: previous } = await admin
+    .from("tenant_subscriptions")
+    .select("status, plan_id, cancel_at_period_end")
+    .eq("photographer_id", photographerId)
+    .maybeSingle();
+
   const { error } = await admin.from("tenant_subscriptions").upsert(
     {
       photographer_id: photographerId,
+      plan_id: nextPlanId,
       status,
       provider: "stripe",
       stripe_subscription_id: subscription.id,
@@ -192,6 +203,12 @@ async function upsertTenantSubscriptionFromStripe(subscription: Stripe.Subscript
       trial_end: subscription.trial_end
         ? new Date(subscription.trial_end * 1000).toISOString()
         : null,
+      collection_state:
+        status === "past_due"
+          ? "grace"
+          : status === "canceled" || status === "suspended"
+            ? "delinquent"
+            : "current",
       is_lifetime: false,
       updated_at: new Date().toISOString(),
     },
@@ -203,6 +220,50 @@ async function upsertTenantSubscriptionFromStripe(subscription: Stripe.Subscript
   }
 
   await applyEntitlementsForPhotographer(photographerId, status);
+
+  const correlationId =
+    typeof subscription.metadata?.correlation_id === "string" &&
+    subscription.metadata.correlation_id.trim()
+      ? subscription.metadata.correlation_id.trim()
+      : subscription.id;
+
+  if (status === "active" && previous?.status !== "active") {
+    await sendBillingNotification({
+      type: "subscription_activated",
+      photographerId,
+      correlationId,
+      idempotencySuffix: subscription.id,
+      context: {
+        planName: subscription.metadata?.subscription_plan_code || undefined,
+        periodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+      },
+    });
+  }
+
+  if (previous?.plan_id && nextPlanId && previous.plan_id !== nextPlanId) {
+    await sendBillingNotification({
+      type: "plan_changed",
+      photographerId,
+      correlationId,
+      idempotencySuffix: subscription.id,
+      context: {
+        planName: subscription.metadata?.subscription_plan_code || undefined,
+      },
+    });
+  }
+
+  if (subscription.cancel_at_period_end && !previous?.cancel_at_period_end) {
+    await sendBillingNotification({
+      type: "cancel_at_period_end_confirmed",
+      photographerId,
+      correlationId,
+      idempotencySuffix: subscription.id,
+      context: {
+        periodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+      },
+    });
+  }
+
   return { ok: true };
 }
 
@@ -228,10 +289,18 @@ async function handleInvoiceEvent(invoice: Stripe.Invoice, paid: boolean) {
   }
 
   const nextStatus = paid ? "active" : "past_due";
+  const now = new Date();
+  const graceEndsAt = paid
+    ? null
+    : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const { error } = await admin
     .from("tenant_subscriptions")
     .update({
       status: nextStatus,
+      latest_invoice_id: invoice.id || null,
+      collection_state: paid ? "recovered" : "grace",
+      last_payment_failed_at: paid ? null : now.toISOString(),
+      grace_period_ends_at: graceEndsAt,
       updated_at: new Date().toISOString(),
     })
     .eq("photographer_id", photographerId);
@@ -241,6 +310,36 @@ async function handleInvoiceEvent(invoice: Stripe.Invoice, paid: boolean) {
   }
 
   await applyEntitlementsForPhotographer(photographerId, nextStatus);
+
+  const correlationId =
+    typeof invoice.metadata?.correlation_id === "string" && invoice.metadata.correlation_id.trim()
+      ? invoice.metadata.correlation_id.trim()
+      : invoice.id;
+
+  if (paid) {
+    await sendBillingNotification({
+      type: "payment_recovered_or_reactivated",
+      photographerId,
+      correlationId,
+      idempotencySuffix: invoice.id,
+      context: {
+        amountCents: invoice.amount_paid ?? invoice.amount_due ?? null,
+        currency: invoice.currency || null,
+      },
+    });
+  } else {
+    await sendBillingNotification({
+      type: "renewal_payment_failed",
+      photographerId,
+      correlationId,
+      idempotencySuffix: invoice.id,
+      context: {
+        amountCents: invoice.amount_due ?? invoice.total ?? null,
+        currency: invoice.currency || null,
+      },
+    });
+  }
+
   return { ok: true };
 }
 
@@ -392,6 +491,35 @@ export async function POST(request: Request) {
     .from("billing_events")
     .update({ processed_at: new Date().toISOString() })
     .eq("event_id", event.id);
+
+  const eventObject = event.data.object as unknown as Record<string, unknown>;
+  const metadata =
+    eventObject && typeof eventObject === "object" && "metadata" in eventObject
+      ? ((eventObject as { metadata?: Record<string, unknown> }).metadata || {})
+      : {};
+  const correlationId =
+    typeof metadata.correlation_id === "string" && metadata.correlation_id.trim()
+      ? metadata.correlation_id.trim()
+      : event.id;
+  const tenantId =
+    typeof metadata.photographer_id === "string" ? metadata.photographer_id : null;
+
+  await writeProcessAuditEvent({
+    eventId: `stripe:${event.id}`,
+    actorType: "stripe_webhook",
+    actorId: event.id,
+    tenantId,
+    processArea: "webhook",
+    action: event.type,
+    status: "succeeded",
+    correlationId,
+    idempotencyKey: event.id,
+    source: "api.stripe.webhook",
+    metadata: {
+      livemode: event.livemode,
+      apiVersion: event.api_version || null,
+    },
+  });
 
   return NextResponse.json({ received: true });
 }

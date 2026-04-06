@@ -12,7 +12,21 @@
 
 - `GET /api/admin/billing/subscription/status`
   - returns active plans and current tenant subscription context.
-  - response: `{ plans, subscription, entitlements, billingAccount, subscriptionActive }`.
+  - response: `{ plans, subscription, entitlements, billingAccount, subscriptionActive, trialExpired, graceRemainingDays, collectionState, allowedActions }`.
+
+- `POST /api/admin/billing/subscription/checkout`
+  - body: `{ planId }`.
+  - creates Stripe Checkout session for self-service plan activation.
+
+- `POST /api/admin/billing/subscription/change-plan`
+  - body: `{ planId }`.
+  - changes current Stripe subscription plan with proration.
+
+- `POST /api/admin/billing/subscription/cancel`
+  - sets `cancel_at_period_end = true`.
+
+- `POST /api/admin/billing/subscription/reactivate`
+  - restores an active subscription by clearing `cancel_at_period_end`.
 
 ## Domains
 
@@ -97,7 +111,29 @@
   - allowed transitions:
     - `active -> temporarily_blocked`
     - `temporarily_blocked -> active`
+    - `active|temporarily_blocked -> suspended`
     - `suspended -> active`
+
+- `POST /api/platform/tenants/:id/billing/override`
+  - body: `{ nextStatus, reason, ticketId? }`.
+  - owner override access status (owner_admin).
+  - requires header `x-owner-step-up-token`.
+
+- `POST /api/platform/tenants/:id/billing/trial-reset`
+  - body: `{ reason, ticketId?, days? }`.
+  - resets tenant to trialing with bounded trial days (owner_admin).
+  - requires header `x-owner-step-up-token`.
+
+- `POST /api/platform/tenants/:id/billing/reconcile`
+  - pulls Stripe subscription and reconciles tenant status (owner_support+).
+
+- `POST /api/platform/webhooks/replay`
+  - body: `{ eventId }`.
+  - marks a billing event for replay/reprocessing (owner_admin).
+  - requires header `x-owner-step-up-token`.
+
+- `GET /api/platform/metrics/billing`
+  - summary metrics for subscriptions + failed process audit in last 24h.
 
 - `GET /api/platform/alerts`
   - alert feed filters:
@@ -112,6 +148,35 @@
     - `photographerId`
     - `limit` (1-250)
 
+- `GET /api/platform/audit/events`
+  - process audit stream filters:
+    - `tenantId`
+    - `processArea`
+    - `status`
+    - `correlationId`
+    - `from`
+    - `to`
+    - `limit` (1-300)
+
+- `GET /api/platform/audit/events/:eventId`
+  - one audit event with full snapshots and metadata.
+
+- `GET /api/platform/audit/correlation/:id`
+  - ordered chain of all events in the same correlation id.
+
+- `GET /api/platform/audit/export`
+  - export process audit dataset.
+  - query:
+    - `format` (`json|csv`, default `json`)
+    - `tenantId`
+    - `processArea`
+    - `status`
+    - `correlationId`
+    - `from`
+    - `to`
+    - `limit` (1-2000)
+  - owner role required: `owner_support+`.
+
 Error contract (all owner APIs):
 
 ```json
@@ -125,3 +190,8 @@ Error contract (all owner APIs):
 ```
 
 Possible status codes for owner APIs: `401`, `403`, `404`, `422`, `429`, `500`.
+
+## Notification Provider
+
+- Transactional billing notifications are sent through Resend.
+- Required env: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.

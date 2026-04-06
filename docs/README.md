@@ -16,6 +16,7 @@ This folder is the single source of truth for architecture, operations, and prod
 
 - `docs/runbooks/domain-onboarding.md`
 - `docs/runbooks/billing-lifecycle.md`
+- `docs/runbooks/audit-forensics.md`
 - `docs/runbooks/platform-owner-bootstrap.sql`
 - `docs/security/incident-playbook.md`
 

@@ -52,6 +52,8 @@ export function isMissingSaasFoundationSchemaError(message: string | undefined |
     message.includes("tenant_subscriptions") ||
     message.includes("tenant_entitlements") ||
     message.includes("billing_events") ||
+    message.includes("process_audit_events") ||
+    message.includes("billing_jobs") ||
     message.includes("tenant_domains") ||
     message.includes("audit_logs") ||
     message.includes("stripe_connected_account_id")

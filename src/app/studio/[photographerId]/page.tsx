@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront-page";
 import { getStorefrontByPhotographerId } from "@/lib/photographers";
+import { getConnectedStripeClientForTenant } from "@/lib/stripe";
+import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +18,24 @@ export default async function StudioPage({
     notFound();
   }
 
+  const billingContext = await getTenantBillingContext(photographerId);
+  const connectClient = getConnectedStripeClientForTenant(
+    billingContext.billingAccount || { stripe_connect_account_id: null, connect_status: "not_connected" }
+  );
+  const connectReady =
+    Boolean(connectClient) &&
+    billingContext.billingAccount?.connect_status === "connected" &&
+    canUseOnlinePayments(billingContext);
+  const legacyFallback =
+    process.env.ENABLE_LEGACY_STRIPE_FALLBACK === "true" &&
+    (billingContext.billingAccount?.legacy_checkout_enabled ?? true);
+
   return (
     <main className="min-h-screen px-4 pb-12 pt-4 md:px-8 md:pb-16 md:pt-6">
       <StorefrontPage
         photographer={storefront.photographer}
         formats={storefront.formats}
-        stripeEnabled={Boolean(process.env.STRIPE_SECRET_KEY)}
+        stripeEnabled={connectReady || legacyFallback}
       />
     </main>
   );

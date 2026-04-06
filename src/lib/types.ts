@@ -114,6 +114,10 @@ export interface TenantSubscription {
   cancel_at_period_end: boolean;
   canceled_at?: string | null;
   is_lifetime: boolean;
+  latest_invoice_id?: string | null;
+  grace_period_ends_at?: string | null;
+  last_payment_failed_at?: string | null;
+  collection_state?: "current" | "grace" | "delinquent" | "recovered";
   created_at: string;
   updated_at: string;
 }
@@ -236,11 +240,14 @@ export interface OrderExportJob {
   updated_at: string;
 }
 
+export type PlatformAdminRole = "owner_admin" | "owner_support" | "owner_readonly";
+
 export interface PlatformAdmin {
   id: string;
   auth_user_id: string;
   email: string;
   is_active: boolean;
+  role: PlatformAdminRole;
   created_at: string;
   updated_at: string;
 }
@@ -314,4 +321,31 @@ export interface PlatformSupportAction {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProcessAuditEvent {
+  event_id: string;
+  occurred_at: string;
+  actor_type: "tenant" | "owner" | "system" | "stripe_webhook";
+  actor_id: string | null;
+  tenant_id: string | null;
+  process_area:
+    | "subscription"
+    | "invoice"
+    | "entitlement"
+    | "access"
+    | "webhook"
+    | "reconcile"
+    | "override";
+  action: string;
+  status: "started" | "succeeded" | "failed" | "rolled_back";
+  correlation_id: string;
+  idempotency_key: string | null;
+  source: string;
+  before_snapshot: Record<string, unknown> | null;
+  after_snapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
 }

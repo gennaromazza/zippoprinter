@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import type { SubscriptionPlan, TenantBillingAccount, TenantSubscription, TenantSubscriptionStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,16 @@ interface SubscriptionStatusResponse {
   plans: SubscriptionPlan[];
   billingAccount: TenantBillingAccount | null;
   subscriptionActive: boolean;
+  trialExpired?: boolean;
+  graceRemainingDays?: number;
+  collectionState?: string;
+  allowedActions?: {
+    canStartCheckout?: boolean;
+    canChangePlan?: boolean;
+    canCancel?: boolean;
+    canReactivate?: boolean;
+  };
+  correlationId?: string;
   error?: string;
 }
 
@@ -90,8 +100,10 @@ export function SubscriptionStatusPanel() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState<SubscriptionStatusResponse | null>(null);
+  const [actionBusy, setActionBusy] = useState<null | "checkout" | "change" | "cancel" | "reactivate">(null);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
 
-  const loadStatus = async ({ silent = false }: { silent?: boolean } = {}) => {
+  const loadStatus = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (silent) {
       setRefreshing(true);
     } else {
@@ -106,6 +118,9 @@ export function SubscriptionStatusPanel() {
         throw new Error(data.error || "Impossibile leggere lo stato abbonamento.");
       }
       setPayload(data);
+      if (!selectedPlanId && data.plans?.length) {
+        setSelectedPlanId(data.plans[0]?.id || "");
+      }
     } catch (statusError) {
       setError(
         statusError instanceof Error
@@ -116,11 +131,11 @@ export function SubscriptionStatusPanel() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedPlanId]);
 
   useEffect(() => {
     void loadStatus();
-  }, []);
+  }, [loadStatus]);
 
   const status = payload?.subscription?.status;
   const expiryLabel = useMemo(() => getExpiryLabel(payload?.subscription || null), [payload?.subscription]);
@@ -130,6 +145,41 @@ export function SubscriptionStatusPanel() {
     }
     return payload.plans.find((plan) => plan.id === payload.subscription?.plan_id) || null;
   }, [payload]);
+
+  const runAction = async (
+    action: "checkout" | "change" | "cancel" | "reactivate",
+    endpoint: string,
+    body?: Record<string, unknown>
+  ) => {
+    setError("");
+    setActionBusy(action);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        checkoutUrl?: string;
+        correlationId?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Operazione non riuscita.");
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+
+      await loadStatus({ silent: true });
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Errore operazione abbonamento.");
+    } finally {
+      setActionBusy(null);
+    }
+  };
 
   return (
     <div className="rounded-[1.4rem] border border-[color:var(--border)] bg-white/70 p-4">
@@ -197,6 +247,75 @@ export function SubscriptionStatusPanel() {
               <p className="mt-1 text-sm font-semibold text-foreground">
                 {payload?.subscriptionActive ? "Abilitato" : "Non abilitato"}
               </p>
+            </div>
+            <div className="rounded-xl border border-[color:var(--border)] bg-white/75 px-4 py-3 md:col-span-2">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Stato riscossione</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {payload?.collectionState || "current"}
+                {payload?.graceRemainingDays && payload.graceRemainingDays > 0
+                  ? ` • grace ${payload.graceRemainingDays} giorni`
+                  : ""}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-[color:var(--border)] bg-white/75 p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Azioni abbonamento</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <select
+                className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
+                value={selectedPlanId}
+                onChange={(event) => setSelectedPlanId(event.target.value)}
+              >
+                {(payload?.plans || []).map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} ({(plan.price_cents / 100).toFixed(2)} {plan.currency.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                onClick={() =>
+                  void runAction(
+                    "checkout",
+                    "/api/admin/billing/subscription/checkout",
+                    { planId: selectedPlanId }
+                  )
+                }
+                disabled={actionBusy !== null || !payload?.allowedActions?.canStartCheckout || !selectedPlanId}
+              >
+                {actionBusy === "checkout" ? "Avvio checkout..." : "Attiva / Riattiva con checkout"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void runAction(
+                    "change",
+                    "/api/admin/billing/subscription/change-plan",
+                    { planId: selectedPlanId }
+                  )
+                }
+                disabled={actionBusy !== null || !payload?.allowedActions?.canChangePlan || !selectedPlanId}
+              >
+                {actionBusy === "change" ? "Cambio piano..." : "Cambia piano (prorata)"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("cancel", "/api/admin/billing/subscription/cancel")}
+                disabled={actionBusy !== null || !payload?.allowedActions?.canCancel}
+              >
+                {actionBusy === "cancel" ? "Annullamento..." : "Annulla a fine periodo"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runAction("reactivate", "/api/admin/billing/subscription/reactivate")}
+                disabled={actionBusy !== null || !payload?.allowedActions?.canReactivate}
+              >
+                {actionBusy === "reactivate" ? "Riattivazione..." : "Riattiva subscription"}
+              </Button>
             </div>
           </div>
 

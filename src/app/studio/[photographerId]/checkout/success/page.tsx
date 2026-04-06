@@ -52,25 +52,40 @@ export default async function CheckoutSuccessPage({
       }
 
       if (session && session.payment_status === "paid") {
-        const amountPaidCents = session.amount_total ?? order.amount_paid_cents;
-        const amountDueCents = Math.max(order.total_cents - amountPaidCents, 0);
+        // Only update if the webhook hasn't already reconciled this order.
+        // Using .neq("payment_status", "paid") prevents a race with the webhook handler.
+        if (order.payment_status !== "paid") {
+          const amountPaidCents = session.amount_total ?? order.amount_paid_cents;
+          const amountDueCents = Math.max(order.total_cents - amountPaidCents, 0);
 
-        const { data: updatedOrder } = await admin
-          .from("orders")
-          .update({
-            status: "paid",
-            payment_status: amountDueCents > 0 ? "partial" : "paid",
-            amount_paid_cents: amountPaidCents,
-            amount_due_cents: amountDueCents,
-            paid_at: order.paid_at || new Date(session.created * 1000).toISOString(),
-            stripe_payment_intent_id:
-              typeof session.payment_intent === "string" ? session.payment_intent : null,
-          })
-          .eq("id", order.id)
-          .select("*")
-          .maybeSingle();
+          const { data: updatedOrder } = await admin
+            .from("orders")
+            .update({
+              status: "paid",
+              payment_status: amountDueCents > 0 ? "partial" : "paid",
+              amount_paid_cents: amountPaidCents,
+              amount_due_cents: amountDueCents,
+              paid_at: order.paid_at || new Date(session.created * 1000).toISOString(),
+              stripe_payment_intent_id:
+                typeof session.payment_intent === "string" ? session.payment_intent : null,
+            })
+            .eq("id", order.id)
+            .neq("payment_status", "paid")
+            .select("*")
+            .maybeSingle();
 
-        order = (updatedOrder as Order | null) ?? order;
+          if (updatedOrder) {
+            order = updatedOrder as Order;
+          } else {
+            // Webhook already updated, re-fetch latest state
+            const { data: freshOrder } = await admin
+              .from("orders")
+              .select("*")
+              .eq("id", order.id)
+              .maybeSingle();
+            if (freshOrder) order = freshOrder as Order;
+          }
+        }
       }
     }
   }

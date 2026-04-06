@@ -2,9 +2,47 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { getDepositAmountCents } from "@/lib/payments";
 import { revalidatePath } from "next/cache";
 import { isSameOriginRequest } from "@/lib/request-security";
+
+const VALID_ORDER_STATUSES = new Set([
+  "pending",
+  "paid",
+  "printing",
+  "ready",
+  "completed",
+  "cancelled",
+]);
+
+/** Allowed forward transitions: key = current status, value = set of valid next statuses */
+const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
+  pending: new Set(["paid", "printing", "cancelled"]),
+  paid: new Set(["printing", "cancelled"]),
+  printing: new Set(["ready", "cancelled"]),
+  ready: new Set(["completed", "cancelled"]),
+  completed: new Set([]),
+  cancelled: new Set([]),
+};
+
+async function getAuthenticatedPhotographer() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  return getCurrentPhotographerForUser(user);
+}
+
+async function verifyOrderOwnership(orderId: string, photographerId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("id", orderId)
+    .eq("photographer_id", photographerId)
+    .maybeSingle();
+  return Boolean(data);
+}
 
 function revalidateOrderViews(orderId: string) {
   revalidatePath("/admin");
@@ -16,11 +54,16 @@ export async function recordOrderPayment(orderId: string) {
   if (!(await isSameOriginRequest())) {
     return;
   }
+  const photographer = await getAuthenticatedPhotographer();
+  if (!photographer || !(await verifyOrderOwnership(orderId, photographer.id))) {
+    return;
+  }
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
     .select("total_cents")
     .eq("id", orderId)
+    .eq("photographer_id", photographer.id)
     .single();
 
   if (!order) {
@@ -45,6 +88,10 @@ export async function recordOrderPayment(orderId: string) {
 
 export async function recordOrderDeposit(orderId: string) {
   if (!(await isSameOriginRequest())) {
+    return;
+  }
+  const photographer = await getAuthenticatedPhotographer();
+  if (!photographer || !(await verifyOrderOwnership(orderId, photographer.id))) {
     return;
   }
   const supabase = await createClient();
@@ -73,13 +120,13 @@ export async function recordOrderDeposit(orderId: string) {
     return;
   }
 
-  const { data: photographer } = await supabase
+  const { data: depositSettings } = await supabase
     .from("photographers")
     .select("deposit_type, deposit_value")
     .eq("id", order.photographer_id)
     .maybeSingle();
 
-  const suggestedDeposit = getDepositAmountCents(totalCents, photographer || null);
+  const suggestedDeposit = getDepositAmountCents(totalCents, depositSettings || null);
   const appliedDepositCents = Math.min(amountDueCents, suggestedDeposit);
   const nextAmountPaidCents = amountPaidCents + appliedDepositCents;
   const nextAmountDueCents = Math.max(totalCents - nextAmountPaidCents, 0);
@@ -104,14 +151,25 @@ export async function deleteOrderPhotos(orderId: string, storagePaths: string[])
   if (!(await isSameOriginRequest())) {
     return;
   }
+  const photographer = await getAuthenticatedPhotographer();
+  if (!photographer || !(await verifyOrderOwnership(orderId, photographer.id))) {
+    return;
+  }
+
+  // Validate that all storage paths belong to this photographer's namespace
+  const safePrefix = `${photographer.id}/`;
+  const safePaths = storagePaths.filter(
+    (p) => p.startsWith(safePrefix) && !p.includes("..")
+  );
+
   const supabase = await createClient();
   const adminClient = createAdminClient();
   
   // Delete from storage
-  if (storagePaths.length > 0) {
+  if (safePaths.length > 0) {
     const { error: storageError } = await adminClient.storage
       .from("photos")
-      .remove(storagePaths);
+      .remove(safePaths);
 
     if (storageError) {
       console.error("Error deleting photos from storage:", storageError);
@@ -137,7 +195,32 @@ export async function updateOrderStatus(orderId: string, status: string) {
   if (!(await isSameOriginRequest())) {
     return;
   }
+  if (!VALID_ORDER_STATUSES.has(status)) {
+    return;
+  }
+  const photographer = await getAuthenticatedPhotographer();
+  if (!photographer || !(await verifyOrderOwnership(orderId, photographer.id))) {
+    return;
+  }
   const supabase = await createClient();
+
+  // Fetch current status to enforce forward-only transitions
+  const { data: currentOrder } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .eq("photographer_id", photographer.id)
+    .maybeSingle();
+
+  if (!currentOrder) {
+    return;
+  }
+
+  const allowedNext = ALLOWED_TRANSITIONS[currentOrder.status];
+  if (!allowedNext || !allowedNext.has(status)) {
+    return;
+  }
+
   const updates: {
     status: string;
     ready_at?: string;

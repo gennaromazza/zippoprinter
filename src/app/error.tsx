@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect } from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -46,12 +47,12 @@ export default function GlobalError({
             <RotateCcw className="h-4 w-4" />
             Riprova
           </Button>
-          <a
+          <Link
             href="/"
             className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--surface-strong)] px-7 text-sm font-semibold text-foreground hover:bg-[color:var(--muted)]"
           >
             Torna alla home
-          </a>
+          </Link>
         </div>
       </div>
     </main>
