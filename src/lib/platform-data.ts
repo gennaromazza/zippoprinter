@@ -405,3 +405,46 @@ export async function listPlatformEvents(filters: PlatformEventFilters) {
     items: (data as PlatformEvent[] | null) ?? [],
   };
 }
+
+export interface RevenueSnapshot {
+  generated_at: string;
+  mrr_cents: number;
+  arr_cents: number;
+  currency: string;
+  churned_last_30d: number;
+  active_total: number;
+  total_canceled: number;
+  new_trials_30d: number;
+  new_active_30d: number;
+  churn_rate_pct: number;
+  trial_conversion_rate_pct: number;
+  estimated_ltv_cents: number;
+}
+
+export interface RevenueByPlan {
+  plan_code: string;
+  plan_name: string;
+  billing_mode: string | null;
+  unit_price_cents: number | null;
+  active_subscribers: number;
+  trialing: number;
+  canceled: number;
+  plan_mrr_cents: number;
+}
+
+export async function getRevenueMetrics(): Promise<{
+  snapshot: RevenueSnapshot | null;
+  byPlan: RevenueByPlan[];
+}> {
+  const admin = createAdminClient();
+
+  const [{ data: snapshotData }, { data: planData }] = await Promise.all([
+    admin.from("platform_revenue_snapshot").select("*").limit(1).maybeSingle(),
+    admin.from("platform_revenue_by_plan").select("*"),
+  ]);
+
+  return {
+    snapshot: (snapshotData as RevenueSnapshot | null) ?? null,
+    byPlan: (planData as RevenueByPlan[] | null) ?? [],
+  };
+}

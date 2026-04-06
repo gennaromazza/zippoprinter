@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, Building2, Shield, Zap, ScrollText, User } from "lucide-react";
-import { getPlatformAdminContext } from "@/lib/platform-auth";
+import { BarChart3, Building2, Shield, Zap, ScrollText, Users, History, User, TrendingUp } from "lucide-react";
+import { getPlatformAdminContext, hasPlatformRole } from "@/lib/platform-auth";
 import { Button } from "@/components/ui/button";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
@@ -40,6 +40,11 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             <Link href="/platform/tenants"><Button variant="outline" size="sm"><Building2 className="h-4 w-4" />Studi</Button></Link>
             <Link href="/platform/events"><Button variant="outline" size="sm"><Zap className="h-4 w-4" />Eventi</Button></Link>
             <Link href="/platform/audit"><Button variant="outline" size="sm"><ScrollText className="h-4 w-4" />Audit</Button></Link>
+            <Link href="/platform/revenue"><Button variant="outline" size="sm"><TrendingUp className="h-4 w-4" />Revenue</Button></Link>
+            <Link href="/platform/activity"><Button variant="outline" size="sm"><History className="h-4 w-4" />Attivita</Button></Link>
+            {hasPlatformRole(auth.context.admin.role, "owner_admin") ? (
+              <Link href="/platform/admins"><Button variant="outline" size="sm"><Users className="h-4 w-4" />Amministratori</Button></Link>
+            ) : null}
             <Link href="/platform/account"><Button variant="outline" size="sm"><User className="h-4 w-4" />Account</Button></Link>
           </nav>
         </header>

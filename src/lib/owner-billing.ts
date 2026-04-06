@@ -58,6 +58,22 @@ export async function resetTenantTrial(input: {
     .limit(1)
     .maybeSingle();
 
+  if (!existing) {
+    await writeProcessAuditEvent({
+      actorType: "owner",
+      actorId: input.actorUserId,
+      tenantId: input.photographerId,
+      processArea: "override",
+      action: "owner_trial_reset",
+      status: "failed",
+      correlationId: input.correlationId,
+      source: "lib.owner-billing",
+      errorMessage: "No subscription found",
+      metadata: { reason: input.reason, ticketId: input.ticketId || null },
+    });
+    return { ok: false as const, status: 404 as const, message: "Nessuna subscription trovata per questo studio." };
+  }
+
   const { error } = await admin
     .from("tenant_subscriptions")
     .update({

@@ -179,6 +179,8 @@ export default async function PlatformTenantDetailPage({
           photographerId={tenant.photographer_id}
           currentAccessStatus={tenant.access_status}
           supportActions={detail.supportActions}
+          subscriptionStatus={detail.subscription?.status}
+          hasStripeSubscription={Boolean(detail.subscription?.stripe_subscription_id)}
         />
       </section>
 

@@ -171,7 +171,8 @@ export default function LoginPage() {
       });
 
       if (resetError) {
-        setError("Invio link reset non riuscito. Verifica l'email e riprova.");
+        const detail = resetError.message ? ` (${resetError.message})` : "";
+        setError(`Invio link reset non riuscito${detail}.`);
         return;
       }
 

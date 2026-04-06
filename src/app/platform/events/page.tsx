@@ -1,5 +1,6 @@
 import { listPlatformEvents } from "@/lib/platform-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ReplayEventButton } from "./replay-event-button";
 
 export default async function PlatformEventsPage({
   searchParams,
@@ -45,6 +46,7 @@ export default async function PlatformEventsPage({
                 <th className="px-3 py-2">Studio</th>
                 <th className="px-3 py-2">Processato</th>
                 <th className="px-3 py-2">ID evento</th>
+                <th className="px-3 py-2">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -56,6 +58,11 @@ export default async function PlatformEventsPage({
                   <td className="px-3 py-3">{event.photographer_id || "Piattaforma"}</td>
                   <td className="px-3 py-3">{event.processed_at ? "Si" : "No"}</td>
                   <td className="px-3 py-3 break-all">{event.event_id}</td>
+                  <td className="px-3 py-3">
+                    {!event.processed_at ? (
+                      <ReplayEventButton eventId={event.event_id} />
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Server } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Server, ChevronDown } from "lucide-react";
 import { getPlatformOverview, listPlatformAlerts } from "@/lib/platform-data";
+import type { PlatformKPI } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
+import { findRunbookForAlert } from "@/lib/runbook-steps";
 
 export default async function PlatformOverviewPage() {
   const [overview, alerts] = await Promise.all([
@@ -79,20 +81,51 @@ export default async function PlatformOverviewPage() {
                 Nessun alert aperto: situazione stabile.
               </div>
             ) : (
-              alerts.items.map((alert) => (
-                <div key={alert.alert_key} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    {alert.severity === "critical" ? <AlertTriangle className="h-4 w-4 text-red-600" /> : <Clock3 className="h-4 w-4 text-amber-600" />}
-                    <SeverityBadge severity={alert.severity} />
-                    <InfoTip
-                      label={`Severita ${alert.severity}`}
-                      text={getSeverityTooltip(alert.severity)}
-                    />
+              alerts.items.map((alert) => {
+                const guide = findRunbookForAlert(alert.alert_type);
+                return (
+                  <div key={alert.alert_key} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      {alert.severity === "critical" ? <AlertTriangle className="h-4 w-4 text-red-600" /> : <Clock3 className="h-4 w-4 text-amber-600" />}
+                      <SeverityBadge severity={alert.severity} />
+                      <InfoTip
+                        label={`Severita ${alert.severity}`}
+                        text={getSeverityTooltip(alert.severity)}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
+                    {guide ? (
+                      <details className="mt-2">
+                        <summary className="flex cursor-pointer items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
+                          <ChevronDown className="h-3 w-3" />
+                          {guide.title} — {guide.steps.length} passi operativi
+                        </summary>
+                        <ol className="mt-2 space-y-1.5 border-l-2 border-blue-200 pl-3">
+                          {guide.steps.map((step) => (
+                            <li key={step.order} className="text-xs">
+                              <span className="font-semibold text-blue-800">{step.order}.</span>{" "}
+                              <span className="font-medium">{step.action}</span>
+                              {step.detail ? <span className="text-muted-foreground"> — {step.detail}</span> : null}
+                            </li>
+                          ))}
+                        </ol>
+                        <a
+                          href={guide.docPath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1.5 inline-block text-xs text-blue-600 hover:underline"
+                        >
+                          Runbook completo →
+                        </a>
+                      </details>
+                    ) : null}
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">{new Date(alert.created_at).toLocaleString("it-IT")}</p>
+                      <AlertNextStep alert={alert} />
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">{new Date(alert.created_at).toLocaleString("it-IT")}</p>
-                </div>
-              ))
+                );
+              })
             )}
             <Link href="/platform/tenants"><Button variant="outline" className="w-full">Apri elenco studi<ArrowRight className="h-4 w-4" /></Button></Link>
           </CardContent>
@@ -122,13 +155,67 @@ export default async function PlatformOverviewPage() {
 
       <Card className="border-[color:var(--border)] bg-white">
         <CardHeader>
+          <CardDescription>Check giornaliero rapido</CardDescription>
+          <CardTitle>Azioni consigliate oggi</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {buildRecommendedActions(kpi, overview.alertCounts).length === 0 ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900">
+              Nessuna azione urgente: la piattaforma e stabile. Buon lavoro!
+            </div>
+          ) : (
+            buildRecommendedActions(kpi, overview.alertCounts).map((action) => (
+              <Link key={action.href} href={action.href}>
+                <div className="flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 px-4 py-3 transition-colors hover:bg-[color:var(--muted)]/40">
+                  <span className="text-lg">{action.icon}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">{action.title}</p>
+                    <p className="text-xs text-muted-foreground">{action.description}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Link>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <section className="grid gap-5 md:grid-cols-4">
+        <Metric
+          title="Studi in trial"
+          tooltip="Studi attualmente nel periodo di prova. Monitorane la conversione."
+          value={String(kpi?.tenants_trialing || 0)}
+          text="Potenziali clienti paganti."
+        />
+        <Metric
+          title="Studi sospesi"
+          tooltip="Studi sospesi per violazione o morosita."
+          value={String(kpi?.tenants_suspended || 0)}
+          text="Studi da verificare o riattivare."
+        />
+        <Metric
+          title="Domini attivi"
+          tooltip="Domini personalizzati verificati e attivi."
+          value={String(kpi?.domains_active || 0)}
+          text="Studi con brand personalizzato."
+        />
+        <Metric
+          title="Domini in attesa"
+          tooltip="Domini in fase di verifica DNS/SSL."
+          value={String(kpi?.domains_pending || 0)}
+          text="Verifiche DNS/SSL in corso."
+        />
+      </section>
+
+      <Card className="border-[color:var(--border)] bg-white">
+        <CardHeader>
           <CardDescription>Guide rapide</CardDescription>
           <CardTitle>Cosa fare quando c&apos;e un problema</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
-          <RunbookLink href="/docs/runbooks/billing-lifecycle.md" label="Gestione abbonamenti" />
-          <RunbookLink href="/docs/runbooks/domain-onboarding.md" label="Gestione domini" />
-          <RunbookLink href="/docs/security/incident-playbook.md" label="Gestione incidenti" />
+          <RunbookLink href="/platform/runbooks/billing-lifecycle" label="Gestione abbonamenti" />
+          <RunbookLink href="/platform/runbooks/domain-onboarding" label="Gestione domini" />
+          <RunbookLink href="/platform/runbooks/incident-playbook" label="Gestione incidenti" />
         </CardContent>
       </Card>
     </div>
@@ -164,9 +251,9 @@ function StatusCard({ title, icon, value, text }: { title: string; icon: React.R
 
 function RunbookLink({ href, label }: { href: string; label: string }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 px-4 py-3 text-sm font-medium hover:bg-[color:var(--muted)]/40">
+    <Link href={href} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 px-4 py-3 text-sm font-medium hover:bg-[color:var(--muted)]/40">
       <div className="flex items-center gap-2"><Server className="h-4 w-4" />{label}</div>
-    </a>
+    </Link>
   );
 }
 
@@ -192,4 +279,110 @@ function getSeverityTooltip(severity: "critical" | "warning" | "info") {
     return "Rischio medio: da monitorare e risolvere prima che blocchi gli studi.";
   }
   return "Segnale informativo: utile per controllo periodico e prevenzione.";
+}
+
+function AlertNextStep({ alert }: { alert: { alert_type: string; severity: string; photographer_id: string | null } }) {
+  const action = getAlertAction(alert.alert_type, alert.photographer_id);
+  if (!action) {
+    return null;
+  }
+  return (
+    <Link href={action.href} className="text-xs font-medium text-blue-700 hover:underline">
+      {action.label} →
+    </Link>
+  );
+}
+
+function getAlertAction(alertType: string, photographerId: string | null) {
+  if (photographerId) {
+    if (alertType.includes("subscription") || alertType.includes("payment") || alertType.includes("past_due")) {
+      return { href: `/platform/tenants/${photographerId}`, label: "Apri scheda studio" };
+    }
+    if (alertType.includes("domain") || alertType.includes("dns") || alertType.includes("ssl")) {
+      return { href: `/platform/tenants/${photographerId}`, label: "Verifica dominio" };
+    }
+    if (alertType.includes("connect") || alertType.includes("stripe")) {
+      return { href: `/platform/tenants/${photographerId}`, label: "Verifica Connect" };
+    }
+    if (alertType.includes("webhook") || alertType.includes("event")) {
+      return { href: `/platform/events?photographerId=${photographerId}`, label: "Vedi eventi studio" };
+    }
+    return { href: `/platform/tenants/${photographerId}`, label: "Apri dettaglio" };
+  }
+
+  if (alertType.includes("webhook") || alertType.includes("event")) {
+    return { href: "/platform/events", label: "Vedi eventi" };
+  }
+
+  return { href: "/platform/tenants", label: "Elenco studi" };
+}
+
+interface RecommendedAction {
+  icon: string;
+  title: string;
+  description: string;
+  href: string;
+}
+
+function buildRecommendedActions(
+  kpi: PlatformKPI | null,
+  alertCounts: { critical: number; warning: number; info: number }
+): RecommendedAction[] {
+  const actions: RecommendedAction[] = [];
+
+  if (alertCounts.critical > 0) {
+    actions.push({
+      icon: "🚨",
+      title: `${alertCounts.critical} alert critici aperti`,
+      description: "Verificare immediatamente: potenziale blocco operativo o di incasso.",
+      href: "/platform/tenants",
+    });
+  }
+
+  if (kpi?.tenants_past_due && kpi.tenants_past_due > 0) {
+    actions.push({
+      icon: "💳",
+      title: `${kpi.tenants_past_due} studi con pagamento fallito`,
+      description: "Contatta gli studi o verifica i dati di pagamento per sbloccare il servizio.",
+      href: "/platform/tenants?subscription=past_due",
+    });
+  }
+
+  if (kpi?.webhook_unprocessed_over_10m && kpi.webhook_unprocessed_over_10m > 0) {
+    actions.push({
+      icon: "⚡",
+      title: `${kpi.webhook_unprocessed_over_10m} eventi webhook in attesa`,
+      description: "Eventi non processati da oltre 10 minuti. Verifica integrazioni.",
+      href: "/platform/events",
+    });
+  }
+
+  if (kpi?.domains_failed && kpi.domains_failed > 0) {
+    actions.push({
+      icon: "🌐",
+      title: `${kpi.domains_failed} domini con problemi`,
+      description: "Domini con errori DNS/SSL da risolvere.",
+      href: "/platform/tenants?domain=failed",
+    });
+  }
+
+  if (kpi?.connect_pending && kpi.connect_pending > 0) {
+    actions.push({
+      icon: "🔗",
+      title: `${kpi.connect_pending} attivazioni Connect incomplete`,
+      description: "Studi che devono completare la configurazione Stripe Connect.",
+      href: "/platform/tenants?connect=not_ready",
+    });
+  }
+
+  if (alertCounts.warning > 0) {
+    actions.push({
+      icon: "⚠️",
+      title: `${alertCounts.warning} avvisi da monitorare`,
+      description: "Situazioni da risolvere a breve per evitare blocchi futuri.",
+      href: "/platform/tenants",
+    });
+  }
+
+  return actions;
 }
