@@ -37,7 +37,7 @@ export function LandingPage() {
           </p>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link
-              href="/signup"
+              href="/signup?force=1"
               className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]"
             >
               Prova gratis per 14 giorni
@@ -202,7 +202,7 @@ export function LandingPage() {
               ricevere ordini di stampa online.
             </p>
             <Link
-              href="/signup"
+              href="/signup?force=1"
               className="mt-8 inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]"
             >
               Inizia la prova gratuita
@@ -299,7 +299,7 @@ function PricingPreviewCard({
         {description}
       </p>
       <Link
-        href="/signup"
+        href="/signup?force=1"
         className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]"
       >
         Inizia gratis

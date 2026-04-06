@@ -46,9 +46,10 @@ export async function proxy(request: NextRequest) {
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
   const isOnboardingRoute = request.nextUrl.pathname.startsWith("/onboarding");
   const isSignupRoute = request.nextUrl.pathname.startsWith("/signup");
+  const forceAuthPage = request.nextUrl.searchParams.get("force") === "1";
 
   // Authenticated user on signup → redirect to onboarding
-  if (isSignupRoute && user) {
+  if (isSignupRoute && user && !forceAuthPage) {
     return NextResponse.redirect(new URL("/onboarding", request.url));
   }
 
@@ -96,7 +97,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (isLoginRoute && user) {
+  if (isLoginRoute && user && !forceAuthPage) {
     const accessStatus = await getStudioAccessStatus(user.id);
 
     // No photographer record → redirect to onboarding

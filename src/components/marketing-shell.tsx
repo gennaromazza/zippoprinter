@@ -33,13 +33,13 @@ export function MarketingHeader() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/login"
+            href="/login?force=1"
             className="hidden text-sm font-semibold text-foreground hover:text-primary md:block"
           >
             Accedi
           </Link>
           <Link
-            href="/signup"
+            href="/signup?force=1"
             className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]"
           >
             Prova gratis
@@ -74,7 +74,7 @@ export function MarketingHeader() {
               Prezzi
             </Link>
             <Link
-              href="/login"
+              href="/login?force=1"
               onClick={() => setOpen(false)}
               className="rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-white/70"
             >
@@ -131,12 +131,12 @@ export function MarketingFooter() {
             </h3>
             <ul className="mt-4 space-y-2.5">
               <li>
-                <Link href="/login" className="text-sm text-foreground hover:text-primary">
+                <Link href="/login?force=1" className="text-sm text-foreground hover:text-primary">
                   Accedi al pannello
                 </Link>
               </li>
               <li>
-                <Link href="/signup" className="text-sm text-foreground hover:text-primary">
+                <Link href="/signup?force=1" className="text-sm text-foreground hover:text-primary">
                   Registrati gratis
                 </Link>
               </li>

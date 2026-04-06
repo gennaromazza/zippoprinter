@@ -99,7 +99,7 @@ export default function SignupPage() {
             </CardHeader>
             <CardContent className="text-center">
               <Link
-                href="/login"
+                href="/login?force=1"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
               >
                 Vai al login
@@ -138,7 +138,7 @@ export default function SignupPage() {
           <p className="mt-8 text-sm text-muted-foreground">
             Hai già un account?{" "}
             <Link
-              href="/login"
+              href="/login?force=1"
               className="font-semibold text-primary hover:underline"
             >
               Accedi qui
