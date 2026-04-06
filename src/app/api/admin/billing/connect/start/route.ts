@@ -25,6 +25,8 @@ function isPlatformSetupRequiredError(error: unknown) {
     error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
 
   return (
+    message.includes("you can only create new accounts") ||
+    message.includes("signed up for connect") ||
     message.includes("connect platform") ||
     message.includes("platform profile") ||
     message.includes("platform account")
