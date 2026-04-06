@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "reset:connect:test": "node scripts/reset-connect-test.mjs"
+    "reset:connect:test": "node scripts/reset-connect-test.mjs",
+    "deploy:prod:safe": "node scripts/deploy-production-safe.mjs",
+    "deploy:prod:check": "node scripts/deploy-production-safe.mjs --check-only"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",

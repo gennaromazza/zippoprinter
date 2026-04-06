@@ -136,17 +136,16 @@ Nota sicurezza:
 Procedura rapida:
 
 ```bash
-cd D:/ZippoProject/zippoprinter
+cd C:/Users/targa/Downloads/zippoprinter
 git push origin main
-npm run lint
-npm run build
-vercel deploy --prod --yes
+npm run deploy:prod:safe
 ```
 
 Nota importante:
 
-- eseguire i comandi dalla cartella `D:/ZippoProject/zippoprinter`
-- non usare la cartella parent `D:/ZippoProject`, altrimenti Vercel puo deployare un root errato e restituire `404`
+- eseguire i comandi dalla cartella `C:/Users/targa/Downloads/zippoprinter`
+- usare sempre `npm run deploy:prod:safe`: lo script blocca automaticamente deploy su progetto/team errati e verifica alias finale `https://zippoprinter.vercel.app`
+- per sola verifica target senza deploy: `npm run deploy:prod:check`
 
 Migrazioni Supabase da avere allineate:
 
