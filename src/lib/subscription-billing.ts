@@ -1,7 +1,12 @@
 import "server-only";
 
 import type Stripe from "stripe";
-import type { Photographer, SubscriptionPlan, TenantSubscription } from "@/lib/types";
+import type {
+  Photographer,
+  SubscriptionBillingMode,
+  SubscriptionPlan,
+  TenantSubscription,
+} from "@/lib/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe";
 
@@ -9,6 +14,169 @@ function getStripePriceId(plan: SubscriptionPlan) {
   const metadata = plan.metadata || {};
   const raw = typeof metadata.stripe_price_id === "string" ? metadata.stripe_price_id.trim() : "";
   return raw || null;
+}
+
+function getStripeProductId(plan: SubscriptionPlan) {
+  const metadata = plan.metadata || {};
+  const raw = typeof metadata.stripe_product_id === "string" ? metadata.stripe_product_id.trim() : "";
+  return raw || null;
+}
+
+function getStripeLookupKey(plan: SubscriptionPlan) {
+  const metadata = plan.metadata || {};
+  const raw =
+    typeof metadata.stripe_price_lookup_key === "string"
+      ? metadata.stripe_price_lookup_key.trim()
+      : "";
+  return raw || `zippoprinter_plan_${plan.code}`;
+}
+
+function isStripeResourceMissingError(error: unknown) {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: string }).code === "resource_missing"
+  );
+}
+
+function getStripeRecurringForBillingMode(billingMode: SubscriptionBillingMode) {
+  if (billingMode === "monthly") {
+    return { interval: "month" as const };
+  }
+  if (billingMode === "yearly") {
+    return { interval: "year" as const };
+  }
+  return null;
+}
+
+async function persistStripePlanMetadata(
+  admin: ReturnType<typeof createAdminClient>,
+  plan: SubscriptionPlan,
+  next: {
+    stripePriceId: string;
+    stripeProductId: string;
+    stripeLookupKey: string;
+  }
+) {
+  const currentMetadata =
+    plan.metadata && typeof plan.metadata === "object" ? plan.metadata : {};
+  const nextMetadata = {
+    ...currentMetadata,
+    stripe_price_id: next.stripePriceId,
+    stripe_product_id: next.stripeProductId,
+    stripe_price_lookup_key: next.stripeLookupKey,
+  };
+
+  const { error } = await admin
+    .from("subscription_plans")
+    .update({
+      metadata: nextMetadata,
+    })
+    .eq("id", plan.id);
+
+  if (error) {
+    throw new Error(
+      `Piano ${plan.code}: impossibile salvare metadata Stripe (${error.message}).`
+    );
+  }
+}
+
+async function resolveOrCreateStripePriceId(plan: SubscriptionPlan, stripe: Stripe) {
+  const admin = createAdminClient();
+  const configuredPriceId = getStripePriceId(plan);
+  const configuredProductId = getStripeProductId(plan);
+  const lookupKey = getStripeLookupKey(plan);
+
+  if (configuredPriceId) {
+    try {
+      const price = await stripe.prices.retrieve(configuredPriceId);
+      if (price.product && typeof price.product === "string") {
+        await persistStripePlanMetadata(admin, plan, {
+          stripePriceId: price.id,
+          stripeProductId: price.product,
+          stripeLookupKey: lookupKey,
+        });
+      }
+      return price.id;
+    } catch (error) {
+      if (!isStripeResourceMissingError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const existingByLookup = await stripe.prices.list({
+    lookup_keys: [lookupKey],
+    active: true,
+    limit: 1,
+  });
+
+  const reusedPrice = existingByLookup.data[0];
+  if (reusedPrice?.id && typeof reusedPrice.product === "string") {
+    await persistStripePlanMetadata(admin, plan, {
+      stripePriceId: reusedPrice.id,
+      stripeProductId: reusedPrice.product,
+      stripeLookupKey: lookupKey,
+    });
+    return reusedPrice.id;
+  }
+
+  let productId = configuredProductId;
+  if (productId) {
+    try {
+      await stripe.products.retrieve(productId);
+    } catch (error) {
+      if (!isStripeResourceMissingError(error)) {
+        throw error;
+      }
+      productId = null;
+    }
+  }
+
+  if (!productId) {
+    const product = await stripe.products.create(
+      {
+        name: plan.name,
+        metadata: {
+          plan_id: plan.id,
+          plan_code: plan.code,
+          billing_mode: plan.billing_mode,
+        },
+      },
+      {
+        idempotencyKey: `plan-product:${plan.id}`,
+      }
+    );
+    productId = product.id;
+  }
+
+  const recurring = getStripeRecurringForBillingMode(plan.billing_mode);
+  const price = await stripe.prices.create(
+    {
+      product: productId,
+      currency: plan.currency.toLowerCase(),
+      unit_amount: plan.price_cents,
+      lookup_key: lookupKey,
+      ...(recurring ? { recurring } : {}),
+      metadata: {
+        plan_id: plan.id,
+        plan_code: plan.code,
+        billing_mode: plan.billing_mode,
+      },
+    },
+    {
+      idempotencyKey: `plan-price:${plan.id}:${plan.billing_mode}:${plan.price_cents}:${plan.currency.toLowerCase()}`,
+    }
+  );
+
+  await persistStripePlanMetadata(admin, plan, {
+    stripePriceId: price.id,
+    stripeProductId: productId,
+    stripeLookupKey: lookupKey,
+  });
+
+  return price.id;
 }
 
 export async function getActivePlans() {
@@ -92,10 +260,7 @@ export async function createCheckoutSessionForPlan(input: {
   origin: string;
 }) {
   const { stripe, customerId } = await resolveOrCreateStripeCustomer(input.photographer);
-  const priceId = getStripePriceId(input.plan);
-  if (!priceId) {
-    throw new Error("Piano non configurato: manca metadata.stripe_price_id.");
-  }
+  const priceId = await resolveOrCreateStripePriceId(input.plan, stripe);
 
   const isLifetime = input.plan.billing_mode === "lifetime";
 
@@ -154,10 +319,7 @@ export async function changeStripeSubscriptionPlan(input: {
     throw new Error("Stripe piattaforma non configurato.");
   }
 
-  const priceId = getStripePriceId(input.plan);
-  if (!priceId) {
-    throw new Error("Piano non configurato: manca metadata.stripe_price_id.");
-  }
+  const priceId = await resolveOrCreateStripePriceId(input.plan, stripe);
 
   const current = await stripe.subscriptions.retrieve(input.stripeSubscriptionId);
   const itemId = getMainSubscriptionItemId(current);
