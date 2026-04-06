@@ -27,6 +27,8 @@ function isPlatformSetupRequiredError(error: unknown) {
   return (
     message.includes("you can only create new accounts") ||
     message.includes("signed up for connect") ||
+    message.includes("responsibilities of managing losses") ||
+    message.includes("platform-profile") ||
     message.includes("connect platform") ||
     message.includes("platform profile") ||
     message.includes("platform account")
@@ -35,7 +37,7 @@ function isPlatformSetupRequiredError(error: unknown) {
 
 function formatConnectStartError(error: unknown) {
   if (isPlatformSetupRequiredError(error)) {
-    return "La piattaforma Stripe Connect non e ancora completata dal superadmin. Appena il setup piattaforma e concluso, i fotografi vedranno solo l'onboarding Stripe Express.";
+    return "La piattaforma Stripe Connect non e ancora completata dal superadmin. Controlla in Stripe Dashboard > Settings > Connect > Platform profile (responsabilita perdite/losses) e completa la configurazione live.";
   }
 
   return error instanceof Error ? error.message : "Impossibile avviare onboarding Stripe.";
