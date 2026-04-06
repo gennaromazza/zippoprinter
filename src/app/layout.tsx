@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
+import { RecoveryHashRedirect } from "@/components/recovery-hash-redirect";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -32,7 +33,10 @@ export default function RootLayout({
       lang="it"
       className={`${manrope.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col app-shell">{children}</body>
+      <body className="min-h-full flex flex-col app-shell">
+        <RecoveryHashRedirect />
+        {children}
+      </body>
     </html>
   );
 }
