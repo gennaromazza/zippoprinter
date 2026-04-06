@@ -34,10 +34,15 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const authError = params.get("authError");
     const isRecoveryQuery = params.get("recovery") === "1";
     const isRecoveryHash = hashParams.get("type") === "recovery";
     const accessToken = hashParams.get("access_token");
     const refreshToken = hashParams.get("refresh_token");
+
+    if (authError === "otp_expired") {
+      setError("Il link email e scaduto o gia usato. Richiedi un nuovo reset password.");
+    }
 
     if (isRecoveryQuery || isRecoveryHash) {
       setRecoveryMode(true);
