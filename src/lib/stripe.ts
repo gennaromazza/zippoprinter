@@ -6,17 +6,23 @@ import type { TenantBillingAccount } from "@/lib/types";
 let stripeClient: Stripe | null | undefined;
 const stripeConnectClientCache = new Map<string, Stripe>();
 
+function getStripeSecretKey() {
+  const key = (process.env.STRIPE_SECRET_KEY || "").trim();
+  return key || null;
+}
+
 export function getStripeClient() {
   if (stripeClient !== undefined) {
     return stripeClient;
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  const stripeSecretKey = getStripeSecretKey();
+  if (!stripeSecretKey) {
     stripeClient = null;
     return stripeClient;
   }
 
-  stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  stripeClient = new Stripe(stripeSecretKey, {
     appInfo: {
       name: "ZippoPrinter",
     },
@@ -29,6 +35,7 @@ export function getConnectedStripeClientForTenant(
   billingAccount: Pick<TenantBillingAccount, "stripe_connect_account_id" | "connect_status">
 ) {
   const platform = getStripeClient();
+  const stripeSecretKey = getStripeSecretKey();
   if (!platform) {
     return null;
   }
@@ -43,7 +50,11 @@ export function getConnectedStripeClientForTenant(
     return cached;
   }
 
-  const scoped = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  if (!stripeSecretKey) {
+    return null;
+  }
+
+  const scoped = new Stripe(stripeSecretKey, {
     appInfo: {
       name: "ZippoPrinter",
     },
@@ -56,6 +67,7 @@ export function getConnectedStripeClientForTenant(
 
 export function getConnectedStripeClientByAccountId(connectedAccountId: string | null | undefined) {
   const platform = getStripeClient();
+  const stripeSecretKey = getStripeSecretKey();
   if (!platform || !connectedAccountId) {
     return null;
   }
@@ -65,7 +77,11 @@ export function getConnectedStripeClientByAccountId(connectedAccountId: string |
     return cached;
   }
 
-  const scoped = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  if (!stripeSecretKey) {
+    return null;
+  }
+
+  const scoped = new Stripe(stripeSecretKey, {
     appInfo: {
       name: "ZippoPrinter",
     },
