@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
+import { Settings as SettingsIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import type { Photographer, PrintFormat } from "@/lib/types";
-import { Button } from "@/components/ui/button";
 import { PhotographerSettings } from "./photographer-settings";
 import { DomainSettingsPanel } from "./domain-settings-panel";
 import { PrintFormatsManager } from "./print-formats-manager";
@@ -34,34 +32,21 @@ export default async function SettingsPage() {
   const printFormats = (printFormatsData as PrintFormat[] | null) ?? [];
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-8 md:py-8">
-      <div className="mx-auto max-w-5xl">
-        <header className="glass-panel rounded-[2rem] px-5 py-5 md:px-8">
-          <div className="flex items-start gap-4">
-            <Link href="/admin">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <p className="section-kicker mb-2">Impostazioni studio</p>
-              <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight md:text-4xl">
-                <SettingsIcon className="h-7 w-7" />
-                Branding e formati
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Aggiorna la presentazione white-label del front-end cliente, il catalogo dei
-                formati di stampa e la modalita di checkout del tuo studio.
-              </p>
-            </div>
-          </div>
+    <div className="px-4 py-5 md:px-8 md:py-8">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <header>
+          <p className="section-kicker"><SettingsIcon className="h-3.5 w-3.5" />Impostazioni</p>
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Branding e formati</h1>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Presentazione white-label, catalogo formati di stampa e modalita di checkout.
+          </p>
         </header>
 
-        <main className="mt-6 space-y-6">
+        <div className="space-y-6">
           <PhotographerSettings photographer={photographer} />
           <DomainSettingsPanel />
           <PrintFormatsManager formats={printFormats} photographerId={photographer?.id || ""} />
-        </main>
+        </div>
       </div>
     </div>
   );

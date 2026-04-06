@@ -967,14 +967,6 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                 <p><span className="font-semibold">Telefono:</span> {customerPhone}</p>
                 <p><span className="font-semibold">Studio:</span> {photographer?.name || "Studio fotografico"}</p>
               </div>
-
-              <div className="mt-5 field-shell space-y-2 p-4">
-                <Label htmlFor="customer-phone">Telefono obbligatorio</Label>
-                <div className="flex items-center gap-3">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <Input id="customer-phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="+39 333 1234567" required />
-                </div>
-              </div>
             </div>
 
             {paymentBlocked && <div className="mt-4 rounded-[1.5rem] border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">Questo studio richiede il checkout online, ma Stripe non e configurato in questo ambiente. L&apos;admin puo attivarlo oppure usare &quot;Pagamento in studio&quot;.</div>}

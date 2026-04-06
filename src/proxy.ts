@@ -44,6 +44,18 @@ export async function proxy(request: NextRequest) {
   const isAdminRoute = request.nextUrl.pathname.startsWith("/admin");
   const isPlatformRoute = request.nextUrl.pathname.startsWith("/platform");
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
+  const isOnboardingRoute = request.nextUrl.pathname.startsWith("/onboarding");
+  const isSignupRoute = request.nextUrl.pathname.startsWith("/signup");
+
+  // Authenticated user on signup → redirect to onboarding
+  if (isSignupRoute && user) {
+    return NextResponse.redirect(new URL("/onboarding", request.url));
+  }
+
+  // Onboarding requires auth
+  if (isOnboardingRoute && !user) {
+    return NextResponse.redirect(new URL("/signup", request.url));
+  }
 
   if ((isAdminRoute || isPlatformRoute) && !user && !isLoginRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
@@ -73,17 +85,31 @@ export async function proxy(request: NextRequest) {
 
   if (isAdminRoute && user) {
     const accessStatus = await getStudioAccessStatus(user.id);
-    if (accessStatus && accessStatus !== "active") {
+
+    // No photographer record → redirect to onboarding
+    if (accessStatus === null) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
+
+    if (accessStatus !== "active") {
       return NextResponse.redirect(new URL("/login?blocked=1", request.url));
     }
   }
 
   if (isLoginRoute && user) {
     const accessStatus = await getStudioAccessStatus(user.id);
-    if (accessStatus && accessStatus !== "active") {
+
+    // No photographer record → redirect to onboarding
+    if (accessStatus === null) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
+
+    // Blocked / suspended → show login page with warning
+    if (accessStatus !== "active") {
       return supabaseResponse;
     }
 
+    // Active → redirect to admin
     return NextResponse.redirect(new URL("/admin", request.url));
   }
 
@@ -91,7 +117,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/platform/:path*", "/login"],
+  matcher: ["/admin/:path*", "/platform/:path*", "/login", "/onboarding/:path*", "/signup"],
 };
   async function getStudioAccessStatus(userId: string) {
     const adminClient = createAdminClient();

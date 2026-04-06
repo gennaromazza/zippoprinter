@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import type { Order, Photographer } from "@/lib/types";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrdersBoard } from "./orders-board";
 
@@ -33,23 +31,15 @@ export default async function OrdersPage() {
   );
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-8 md:py-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="rounded-[2rem] border border-[color:var(--border)] bg-white px-5 py-5 shadow-[var(--shadow-sm)] md:px-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-4">
-              <Link href="/admin"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
-              <div>
-                <p className="section-kicker mb-2">Archivio ordini</p>
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Console operativa ordini</h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Filtra i lavori in ingresso, controlla il pagamento e apri subito il dettaglio delle immagini.</p>
-              </div>
-            </div>
-            <div className="rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-2 text-sm font-semibold text-foreground">{orders.length} ordini totali</div>
+    <div className="px-4 py-5 md:px-8 md:py-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="section-kicker">Archivio ordini</p>
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ordini</h1>
           </div>
+          <span className="self-start rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-2 text-sm font-semibold text-foreground">{orders.length} ordini totali</span>
         </header>
-
-        <main className="mt-6">
           <Card className="border-[color:var(--border)] bg-white">
             <CardHeader>
               <CardDescription>Ordini studio</CardDescription>
@@ -67,7 +57,6 @@ export default async function OrdersPage() {
               )}
             </CardContent>
           </Card>
-        </main>
       </div>
     </div>
   );

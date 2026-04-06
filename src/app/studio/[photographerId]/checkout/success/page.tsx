@@ -7,8 +7,6 @@ import { getOrderPaymentHeadline } from "@/lib/payments";
 import { getConnectedStripeClientByAccountId, getStripeClient } from "@/lib/stripe";
 import { getStorefrontByPhotographerId } from "@/lib/photographers";
 import type { Order } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-
 export const dynamic = "force-dynamic";
 
 export default async function CheckoutSuccessPage({
@@ -45,9 +43,15 @@ export default async function CheckoutSuccessPage({
       getConnectedStripeClientByAccountId(order.stripe_connected_account_id) || getStripeClient();
 
     if (stripe) {
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      let session;
+      try {
+        session = await stripe.checkout.sessions.retrieve(sessionId);
+      } catch {
+        // Stripe API error — skip payment reconciliation, show page with order data
+        session = null;
+      }
 
-      if (session.payment_status === "paid") {
+      if (session && session.payment_status === "paid") {
         const amountPaidCents = session.amount_total ?? order.amount_paid_cents;
         const amountDueCents = Math.max(order.total_cents - amountPaidCents, 0);
 
@@ -128,8 +132,8 @@ export default async function CheckoutSuccessPage({
                   <p className="font-semibold text-foreground">{getOrderPaymentHeadline(order)}</p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
                     {order.amount_due_cents > 0
-                      ? "Il saldo residuo verra completato direttamente in studio al ritiro o secondo le indicazioni del fotografo."
-                      : "Il pagamento copre integralmente l'ordine. Lo studio puo avviare la produzione delle stampe."}
+                      ? "Il saldo residuo verrà completato direttamente in studio al ritiro o secondo le indicazioni del fotografo."
+                      : "Il pagamento copre integralmente l'ordine. Lo studio può avviare la produzione delle stampe."}
                   </p>
                 </div>
               </div>
@@ -137,8 +141,8 @@ export default async function CheckoutSuccessPage({
           )}
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Link href={`/studio/${photographerId}`}>
-              <Button size="lg">Torna alla pagina studio</Button>
+            <Link href={`/studio/${photographerId}`} className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]">
+              Torna alla pagina studio
             </Link>
           </div>
         </div>

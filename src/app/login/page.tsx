@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Loader2, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,9 +84,7 @@ export default function LoginPage() {
 
         <Card className="glass-panel border-white/40 bg-[rgba(255,253,249,0.88)]">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-primary text-primary-foreground shadow-[0_16px_40px_rgba(143,93,44,0.24)]">
-              <Camera className="h-8 w-8" />
-            </div>
+            <Image src="/logo.png" alt="ZippoPrinter" width={64} height={64} className="mx-auto mb-4 h-16 w-16" />
             <CardTitle>ZippoPrinter Admin</CardTitle>
             <CardDescription>Accedi al pannello di gestione dello studio fotografico.</CardDescription>
           </CardHeader>
@@ -131,6 +131,15 @@ export default function LoginPage() {
                   "Accedi al pannello"
                 )}
               </Button>
+              <p className="mt-4 text-center text-sm text-muted-foreground">
+                Non hai un account?{" "}
+                <Link
+                  href="/signup"
+                  className="font-semibold text-primary hover:underline"
+                >
+                  Registrati gratis
+                </Link>
+              </p>
             </form>
           </CardContent>
         </Card>

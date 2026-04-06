@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { resolveTenantByHost } from "@/lib/tenant-domains";
+import { AdminShell } from "@/components/admin-shell";
 
 function getPlatformAdminUrl() {
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "").trim();
@@ -45,5 +48,16 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  return <>{children}</>;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const photographer = await getCurrentPhotographerForUser(user);
+  if (!photographer) redirect("/login");
+
+  return (
+    <AdminShell photographerName={photographer.name || "Studio fotografico"}>
+      {children}
+    </AdminShell>
+  );
 }

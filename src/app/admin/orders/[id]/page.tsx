@@ -85,25 +85,23 @@ export default async function OrderDetailPage({
   const whatsappPaidUrl = buildWhatsAppHref(order.customer_phone, paidReceiptMessage);
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-8 md:py-8">
+    <div className="px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="rounded-[2rem] border border-[color:var(--border)] bg-white px-5 py-5 shadow-[var(--shadow-sm)] md:px-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="flex items-start gap-4">
-              <Link href="/admin/orders">
-                <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
-              </Link>
-              <div>
-                <p className="section-kicker mb-2">Dettaglio ordine</p>
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{customerLabel}</h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Ricevuto il {formatDateTime(order.created_at)}</p>
-              </div>
+        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex items-start gap-4">
+            <Link href="/admin/orders">
+              <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
+            </Link>
+            <div>
+              <p className="section-kicker">Dettaglio ordine</p>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{customerLabel}</h1>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Ricevuto il {formatDateTime(order.created_at)}</p>
             </div>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${status.className}`}><span className={`status-dot ${status.dotClassName}`} />{status.label}</span>
-              <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${payment.className}`}><span className={`status-dot ${payment.dotClassName}`} />{payment.label}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${status.className}`}><span className={`status-dot ${status.dotClassName}`} />{status.label}</span>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${payment.className}`}><span className={`status-dot ${payment.dotClassName}`} />{payment.label}</span>
           </div>
         </header>
 

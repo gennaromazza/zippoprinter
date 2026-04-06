@@ -5,8 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency } from "@/lib/orders";
 import { getStorefrontByPhotographerId } from "@/lib/photographers";
 import type { Order } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-
 export const dynamic = "force-dynamic";
 
 export default async function CheckoutCancelledPage({
@@ -47,7 +45,7 @@ export default async function CheckoutCancelledPage({
           </div>
           <p className="section-kicker mx-auto mt-6">Pagamento interrotto</p>
           <h1 className="mt-4 text-center text-3xl font-semibold tracking-tight md:text-5xl">
-            Il checkout non e stato completato.
+            Il checkout non è stato completato.
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-center text-base leading-7 text-muted-foreground">
             Nessun addebito confermato. Puoi tornare alla pagina dello studio e ripetere
@@ -67,11 +65,9 @@ export default async function CheckoutCancelledPage({
           )}
 
           <div className="mt-8 flex justify-center">
-            <Link href={`/studio/${photographerId}`}>
-              <Button size="lg">
-                <ArrowLeft className="h-4 w-4" />
-                Torna allo studio
-              </Button>
+            <Link href={`/studio/${photographerId}`} className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-[0_14px_30px_rgba(143,93,44,0.28)] hover:bg-[#7e4f20]">
+              <ArrowLeft className="h-4 w-4" />
+              Torna allo studio
             </Link>
           </div>
         </div>

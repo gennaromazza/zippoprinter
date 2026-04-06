@@ -1,7 +1,8 @@
 import Link from "next/link";
+import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Download, ExternalLink, ImageIcon, LogOut, Package, Palette, Sparkles, Store } from "lucide-react";
+import { Download, ExternalLink, Package, Palette, Sparkles, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { formatCurrency, formatShortDate, getOrderCustomerDisplayName, orderStatusMeta } from "@/lib/orders";
@@ -47,26 +48,19 @@ export default async function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-8 md:py-8">
+    <div className="px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-[2rem] border border-[color:var(--border)] bg-white px-5 py-5 shadow-[var(--shadow-sm)] md:px-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-[1.4rem] bg-primary text-primary-foreground shadow-[0_16px_40px_rgba(217,121,66,0.2)]">
-                <ImageIcon className="h-7 w-7" />
-              </div>
-              <div>
-                <p className="section-kicker mb-2"><Sparkles className="h-3.5 w-3.5" />Dashboard studio</p>
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{photographer.name || "Studio fotografico"}</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Controlla i lavori in arrivo, il metodo di incasso attivo e la vetrina cliente dedicata al tuo studio.</p>
-              </div>
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+              <Image src="/logo.png" alt="" width={28} height={28} />
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-2 text-sm font-semibold text-foreground">{getPaymentModeLabel(photographer.payment_mode || "pay_in_store")}</span>
-              <form action={signOut}><Button variant="outline" size="sm"><LogOut className="h-4 w-4" />Esci</Button></form>
+            <div>
+              <p className="section-kicker"><Sparkles className="h-3.5 w-3.5" />Dashboard studio</p>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{photographer.name || "Studio fotografico"}</h1>
             </div>
           </div>
+          <span className="self-start rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-4 py-2 text-sm font-semibold text-foreground">{getPaymentModeLabel(photographer.payment_mode || "pay_in_store")}</span>
         </header>
 
         <section className="grid gap-5 md:grid-cols-3">
@@ -152,7 +146,7 @@ export default async function AdminDashboard() {
 function MetricCard({ title, value, text }: { title: string; value: string; text: string }) {
   return (
     <Card className="border-[color:var(--border)] bg-white">
-      <CardHeader><CardDescription>{title}</CardDescription><CardTitle className="text-5xl">{value}</CardTitle></CardHeader>
+      <CardHeader><CardDescription>{title}</CardDescription><CardTitle className="text-4xl">{value}</CardTitle></CardHeader>
       <CardContent><p className="text-sm leading-6 text-muted-foreground">{text}</p></CardContent>
     </Card>
   );

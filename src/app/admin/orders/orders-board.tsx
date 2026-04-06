@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Eye, MessageCircle } from "lucide-react";
@@ -73,8 +74,7 @@ export function OrdersBoard({ orders }: { orders: OrderCard[] }) {
             <article key={order.id} className="grid gap-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white p-5 shadow-[var(--shadow-sm)] lg:grid-cols-[112px_1fr_auto]">
               <div className="relative aspect-square overflow-hidden rounded-[1.2rem] bg-[color:var(--muted)]/45">
                 {order.preview_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={order.preview_url} alt={order.customer_email} className="h-full w-full object-cover" />
+                  <Image src={order.preview_url} alt={order.customer_email} fill className="object-cover" sizes="112px" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Nessuna preview</div>
                 )}
