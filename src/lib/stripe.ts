@@ -4,7 +4,12 @@ import Stripe from "stripe";
 import type { TenantBillingAccount } from "@/lib/types";
 
 let stripeClient: Stripe | null | undefined;
+let stripeClientKey: string | null = null;
 const stripeConnectClientCache = new Map<string, Stripe>();
+
+function getConnectCacheKey(stripeSecretKey: string, connectedAccountId: string) {
+  return `${stripeSecretKey}:${connectedAccountId}`;
+}
 
 function getStripeSecretKey() {
   const key = (process.env.STRIPE_SECRET_KEY || "").trim();
@@ -12,14 +17,20 @@ function getStripeSecretKey() {
 }
 
 export function getStripeClient() {
-  if (stripeClient !== undefined) {
-    return stripeClient;
-  }
-
   const stripeSecretKey = getStripeSecretKey();
   if (!stripeSecretKey) {
     stripeClient = null;
+    stripeClientKey = null;
+    stripeConnectClientCache.clear();
     return stripeClient;
+  }
+
+  if (stripeClient && stripeClientKey === stripeSecretKey) {
+    return stripeClient;
+  }
+
+  if (stripeClientKey && stripeClientKey !== stripeSecretKey) {
+    stripeConnectClientCache.clear();
   }
 
   stripeClient = new Stripe(stripeSecretKey, {
@@ -27,6 +38,7 @@ export function getStripeClient() {
       name: "ZippoPrinter",
     },
   });
+  stripeClientKey = stripeSecretKey;
 
   return stripeClient;
 }
@@ -45,7 +57,8 @@ export function getConnectedStripeClientForTenant(
   }
 
   const connectedAccountId = billingAccount.stripe_connect_account_id;
-  const cached = stripeConnectClientCache.get(connectedAccountId);
+  const cacheKey = getConnectCacheKey(stripeSecretKey, connectedAccountId);
+  const cached = stripeConnectClientCache.get(cacheKey);
   if (cached) {
     return cached;
   }
@@ -61,7 +74,7 @@ export function getConnectedStripeClientForTenant(
     stripeAccount: connectedAccountId,
   });
 
-  stripeConnectClientCache.set(connectedAccountId, scoped);
+  stripeConnectClientCache.set(cacheKey, scoped);
   return scoped;
 }
 
@@ -72,7 +85,8 @@ export function getConnectedStripeClientByAccountId(connectedAccountId: string |
     return null;
   }
 
-  const cached = stripeConnectClientCache.get(connectedAccountId);
+  const cacheKey = getConnectCacheKey(stripeSecretKey, connectedAccountId);
+  const cached = stripeConnectClientCache.get(cacheKey);
   if (cached) {
     return cached;
   }
@@ -87,7 +101,7 @@ export function getConnectedStripeClientByAccountId(connectedAccountId: string |
     },
     stripeAccount: connectedAccountId,
   });
-  stripeConnectClientCache.set(connectedAccountId, scoped);
+  stripeConnectClientCache.set(cacheKey, scoped);
   return scoped;
 }
 

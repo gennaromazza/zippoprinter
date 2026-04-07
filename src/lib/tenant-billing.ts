@@ -46,6 +46,10 @@ export async function getTenantBillingContext(photographerId: string): Promise<T
 }
 
 export function canUseOnlinePayments(context: TenantBillingContext) {
+  if (isSubscriptionActive(context.subscription?.status)) {
+    return true;
+  }
+
   return Boolean(context.entitlements?.can_accept_online_payments);
 }
 

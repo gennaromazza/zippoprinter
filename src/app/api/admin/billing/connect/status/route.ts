@@ -7,7 +7,7 @@ import {
   syncStripeConnectAccountForPhotographer,
 } from "@/lib/stripe-connect";
 import type { StripeConnectStatusCard } from "@/lib/types";
-import { getTenantBillingContext, writeAuditLog } from "@/lib/tenant-billing";
+import { canUseOnlinePayments, getTenantBillingContext, writeAuditLog } from "@/lib/tenant-billing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,7 @@ export async function GET() {
     }
 
     const stripe = getStripeClient();
+    const stripeConfigured = Boolean(stripe);
     const context = await getTenantBillingContext(photographer.id);
     const connectAccountId = context.billingAccount?.stripe_connect_account_id || null;
     let statusCard: StripeConnectStatusCard = getStripeConnectStatusCard({
@@ -74,6 +75,17 @@ export async function GET() {
             })
             .eq("photographer_id", photographer.id);
 
+          await writeAuditLog({
+            photographerId: photographer.id,
+            actorUserId: user.id,
+            action: "connect_account_missing_reset",
+            resourceType: "tenant_billing_accounts",
+            resourceId: connectAccountId,
+            details: {
+              reason: "resource_missing",
+            },
+          });
+
           statusCard = getStripeConnectStatusCard({});
         } else {
           throw error;
@@ -82,14 +94,30 @@ export async function GET() {
     }
 
     const refreshed = await getTenantBillingContext(photographer.id);
+    const onlinePaymentsEnabled = canUseOnlinePayments(refreshed);
+
+    if (!stripeConfigured && statusCard.tone === "green") {
+      statusCard = {
+        ...statusCard,
+        tone: "orange",
+        title: "Account collegato, ma ambiente Stripe non pronto",
+        message:
+          "Stripe Connect risulta collegato, ma in questo ambiente manca STRIPE_SECRET_KEY. I checkout online non possono essere creati finche la chiave non viene configurata.",
+        actionLabel: null,
+      };
+    }
+
     return NextResponse.json({
       billingAccount: refreshed.billingAccount,
       subscription: refreshed.subscription,
       entitlements: refreshed.entitlements,
+      onlinePaymentsEnabled,
+      stripeConfigured,
       statusCard,
       connectReady:
+        stripeConfigured &&
         refreshed.billingAccount?.connect_status === "connected" &&
-        Boolean(refreshed.entitlements?.can_accept_online_payments),
+        onlinePaymentsEnabled,
     });
   } catch (error) {
     return NextResponse.json(

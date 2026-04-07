@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
 import type {
   ConnectStatus,
@@ -20,6 +20,8 @@ import {
 
 interface ConnectStatusResponse {
   billingAccount: TenantBillingAccount | null;
+  stripeConfigured?: boolean;
+  onlinePaymentsEnabled?: boolean;
   entitlements?: {
     can_accept_online_payments?: boolean;
   } | null;
@@ -31,6 +33,12 @@ interface ConnectStatusResponse {
 interface ConnectStartResponse {
   url?: string;
   platformSetupRequired?: boolean;
+  error?: string;
+}
+
+interface ConnectDisconnectResponse {
+  disconnected?: boolean;
+  previousConnectAccountId?: string | null;
   error?: string;
 }
 
@@ -97,15 +105,18 @@ export function StripeConnectCard({
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [billingAccount, setBillingAccount] = useState<TenantBillingAccount | null>(null);
   const [canAcceptOnlinePayments, setCanAcceptOnlinePayments] = useState(false);
+  const [stripeConfigured, setStripeConfigured] = useState(true);
   const [connectReady, setConnectReady] = useState(false);
   const [statusCard, setStatusCard] = useState<StripeConnectStatusCardData>(defaultStatusCard);
   const [showConnectGuide, setShowConnectGuide] = useState(false);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
 
-  const loadStatus = async (options?: { successMessage?: string }) => {
+  const loadStatus = useCallback(async (options?: { successMessage?: string }) => {
     setSyncing(true);
     setError("");
 
@@ -117,7 +128,10 @@ export function StripeConnectCard({
       }
 
       setBillingAccount(payload.billingAccount || null);
-      setCanAcceptOnlinePayments(Boolean(payload.entitlements?.can_accept_online_payments));
+      setStripeConfigured(payload.stripeConfigured !== false);
+      setCanAcceptOnlinePayments(
+        payload.onlinePaymentsEnabled ?? Boolean(payload.entitlements?.can_accept_online_payments)
+      );
       setConnectReady(Boolean(payload.connectReady));
       setStatusCard(payload.statusCard || defaultStatusCard);
       setMessage(options?.successMessage || "");
@@ -127,21 +141,17 @@ export function StripeConnectCard({
       setLoading(false);
       setSyncing(false);
     }
-  };
+  }, []);
 
-  const loadStatusEffect = useEffectEvent(async (options?: { successMessage?: string }) => {
-    await loadStatus(options);
-  });
-
-  const clearPopupMonitoring = () => {
+  const clearPopupMonitoring = useCallback(() => {
     if (popupMonitorTimerRef.current !== null) {
       window.clearInterval(popupMonitorTimerRef.current);
       popupMonitorTimerRef.current = null;
     }
     onboardingPopupRef.current = null;
-  };
+  }, []);
 
-  const startPopupMonitoring = () => {
+  const startPopupMonitoring = useCallback(() => {
     if (popupMonitorTimerRef.current !== null) {
       window.clearInterval(popupMonitorTimerRef.current);
     }
@@ -149,15 +159,23 @@ export function StripeConnectCard({
     popupMonitorTimerRef.current = window.setInterval(() => {
       if (!onboardingPopupRef.current || onboardingPopupRef.current.closed) {
         clearPopupMonitoring();
-        void loadStatusEffect({
+        void loadStatus({
           successMessage:
             "Finestra Stripe chiusa. Stato aggiornato automaticamente.",
         });
       }
     }, 1500);
-  };
+  }, [clearPopupMonitoring, loadStatus]);
 
-  const handleConnect = async () => {
+  const handleConnect = useCallback(async () => {
+    if (!stripeConfigured) {
+      setError(
+        "Stripe piattaforma non configurato in questo ambiente. Configura STRIPE_SECRET_KEY lato server e riavvia l'app per riattivare l'associazione."
+      );
+      setMessage("");
+      return;
+    }
+
     setConnecting(true);
     setError("");
     setMessage("");
@@ -189,19 +207,44 @@ export function StripeConnectCard({
       setError(connectError instanceof Error ? connectError.message : "Errore connessione Stripe.");
       setConnecting(false);
     }
-  };
+  }, [startPopupMonitoring, stripeConfigured]);
 
-  const handleConnectEffect = useEffectEvent(async () => {
-    await handleConnect();
-  });
+  const handleDisconnect = useCallback(async () => {
+    setDisconnecting(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/billing/connect/disconnect", { method: "DELETE" });
+      const payload = await parseJsonSafe<ConnectDisconnectResponse>(response);
+      if (!response.ok || !payload.disconnected) {
+        throw new Error(payload.error || "Impossibile dissociare account Stripe.");
+      }
+
+      setShowDisconnectDialog(false);
+      await loadStatus({
+        successMessage: payload.previousConnectAccountId
+          ? "Account Stripe dissociato. Gli incassi online sono stati disattivati."
+          : "Nessun account Stripe collegato: stato ripulito correttamente.",
+      });
+    } catch (disconnectError) {
+      setError(
+        disconnectError instanceof Error
+          ? disconnectError.message
+          : "Errore durante la dissociazione dell'account Stripe."
+      );
+    } finally {
+      setDisconnecting(false);
+    }
+  }, [loadStatus]);
 
   useEffect(() => {
     handledEntryStateRef.current = false;
-    void loadStatusEffect({
+    void loadStatus({
       successMessage:
         entryState === "return" ? "Stato Stripe aggiornato dopo il ritorno da Stripe." : undefined,
     });
-  }, [entryState]);
+  }, [entryState, loadStatus]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -219,7 +262,7 @@ export function StripeConnectCard({
       }
 
       clearPopupMonitoring();
-      void loadStatusEffect({
+      void loadStatus({
         successMessage:
           data.state === "refresh"
             ? "Stripe ha richiesto un nuovo link: stato aggiornato."
@@ -232,7 +275,7 @@ export function StripeConnectCard({
       window.removeEventListener("message", onMessage);
       clearPopupMonitoring();
     };
-  }, []);
+  }, [clearPopupMonitoring, loadStatus]);
 
   useEffect(() => {
     if (entryState !== "refresh" || loading || connecting || handledEntryStateRef.current) {
@@ -241,8 +284,8 @@ export function StripeConnectCard({
 
     handledEntryStateRef.current = true;
     onEntryStateHandled?.();
-    void handleConnectEffect();
-  }, [connecting, entryState, loading, onEntryStateHandled]);
+    void handleConnect();
+  }, [connecting, entryState, handleConnect, loading, onEntryStateHandled]);
 
   useEffect(() => {
     if (entryState !== "return" || handledEntryStateRef.current) {
@@ -254,6 +297,8 @@ export function StripeConnectCard({
   }, [entryState, onEntryStateHandled]);
 
   const connectStatus = billingAccount?.connect_status || "not_connected";
+  const hasLinkedStripeAccount = Boolean(billingAccount?.stripe_connect_account_id);
+  const showConnectActions = Boolean(statusCard.actionLabel);
   const StatusIcon = statusCard.tone === "green" ? CheckCircle2 : AlertTriangle;
 
   return (
@@ -309,6 +354,13 @@ export function StripeConnectCard({
               Il tuo piano non abilita ancora l&apos;incasso online oppure e in aggiornamento.
             </p>
           )}
+          {!stripeConfigured && (
+            <p className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-900">
+              {hasLinkedStripeAccount
+                ? "Questo account e collegato, ma in questo ambiente manca STRIPE_SECRET_KEY: il checkout online non puo essere creato finche non viene configurata."
+                : "Stripe piattaforma non configurato in questo ambiente: onboarding temporaneamente non disponibile."}
+            </p>
+          )}
         </div>
 
         {billingAccount?.stripe_connect_account_id ? (
@@ -318,7 +370,7 @@ export function StripeConnectCard({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          {statusCard.tone !== "green" ? (
+          {showConnectActions ? (
             <Button type="button" onClick={() => void handleConnect()} disabled={connecting || loading}>
               {connecting ? (
                 <>
@@ -326,7 +378,7 @@ export function StripeConnectCard({
                   Reindirizzamento
                 </>
               ) : (
-                statusCard.actionLabel || "Configura Stripe"
+                statusCard.actionLabel
               )}
             </Button>
           ) : null}
@@ -343,11 +395,33 @@ export function StripeConnectCard({
               </>
             )}
           </Button>
-          {statusCard.tone !== "green" ? (
+          {showConnectActions ? (
             <Button type="button" variant="outline" onClick={() => setShowConnectGuide(true)} disabled={connecting || loading}>
               Guida rapida
             </Button>
           ) : null}
+          {hasLinkedStripeAccount ? (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => setShowDisconnectDialog(true)}
+              disabled={disconnecting || connecting || syncing || loading}
+            >
+              {disconnecting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Dissociazione
+                </>
+              ) : (
+                "Dissocia account Stripe"
+              )}
+            </Button>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Account gia dissociato
+            </span>
+          )}
         </div>
 
         {message ? (
@@ -417,6 +491,50 @@ export function StripeConnectCard({
                 </>
               ) : (
                 "Continua su Stripe"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={hasLinkedStripeAccount && showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Dissociare account Stripe?</DialogTitle>
+            <DialogDescription>
+              {hasLinkedStripeAccount
+                ? "Questa azione scollega l'account Stripe dal tuo studio e disattiva subito gli incassi online. Potrai ricollegarlo in qualsiasi momento con un nuovo onboarding."
+                : "Al momento non risulta un account Stripe collegato. Questa azione forza la pulizia dello stato Connect per sicurezza."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Gli ordini gia esistenti restano invariati. I nuovi checkout online verranno bloccati finche non
+            ricolleghi Stripe.
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-end sm:space-x-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowDisconnectDialog(false)}
+              disabled={disconnecting}
+            >
+              Annulla
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleDisconnect()}
+              disabled={disconnecting || loading}
+            >
+              {disconnecting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Dissociazione
+                </>
+              ) : (
+                "Conferma dissociazione"
               )}
             </Button>
           </DialogFooter>

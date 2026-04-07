@@ -85,8 +85,11 @@ async function ensureExpressAccount(input: {
 }
 
 export async function POST(request: Request) {
+  const correlationId = getCorrelationIdFromHeaders(request.headers);
+  let actorUserId: string | null = null;
+  let tenantId: string | null = null;
+
   try {
-    const correlationId = getCorrelationIdFromHeaders(request.headers);
     if (!(await isSameOriginRequest())) {
       return NextResponse.json({ error: "Richiesta non valida." }, { status: 403 });
     }
@@ -98,6 +101,9 @@ export async function POST(request: Request) {
     if (!photographer) {
       return NextResponse.json({ error: "Profilo studio non trovato." }, { status: 404 });
     }
+
+    actorUserId = user.id;
+    tenantId = photographer.id;
 
     await writeProcessAuditEvent({
       actorType: "tenant",
@@ -112,6 +118,18 @@ export async function POST(request: Request) {
 
     const stripe = getStripeClient();
     if (!stripe) {
+      await writeProcessAuditEvent({
+        actorType: "tenant",
+        actorId: user.id,
+        tenantId: photographer.id,
+        processArea: "subscription",
+        action: "connect_onboarding_started",
+        status: "failed",
+        correlationId,
+        source: "api.admin.billing.connect.start",
+        errorCode: "stripe_not_configured",
+        errorMessage: "Stripe piattaforma non configurato.",
+      });
       return NextResponse.json({ error: "Stripe piattaforma non configurato." }, { status: 500 });
     }
 
@@ -178,6 +196,21 @@ export async function POST(request: Request) {
       correlationId,
     });
   } catch (error) {
+    if (actorUserId && tenantId) {
+      await writeProcessAuditEvent({
+        actorType: "tenant",
+        actorId: actorUserId,
+        tenantId,
+        processArea: "subscription",
+        action: "connect_onboarding_started",
+        status: "failed",
+        correlationId,
+        source: "api.admin.billing.connect.start",
+        errorCode: isPlatformSetupRequiredError(error) ? "platform_setup_required" : "start_failed",
+        errorMessage: formatConnectStartError(error),
+      });
+    }
+
     return NextResponse.json(
       {
         error: formatConnectStartError(error),

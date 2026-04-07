@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -21,7 +21,7 @@ import { formatCurrency } from "@/lib/orders";
 import { getCheckoutAmounts, getPaymentModeLabel } from "@/lib/payments";
 import { getUnitPriceForQuantity } from "@/lib/pricing";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
-import type { Photographer, PrintFormat } from "@/lib/types";
+import type { DepositType, PaymentMode, Photographer, PrintFormat } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +51,15 @@ interface OrderPayload {
   orderId?: string;
   paymentRequired?: boolean;
   checkoutUrl?: string;
+}
+
+interface CheckoutConfigPayload {
+  paymentMode?: PaymentMode;
+  depositType?: DepositType | null;
+  depositValue?: number | null;
+  stripeEnabled?: boolean;
+  updatedAt?: string | null;
+  error?: string;
 }
 
 interface UploadFormProps {
@@ -277,9 +286,89 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const [uploadWarningMessage, setUploadWarningMessage] = useState("");
   const [uploadInfoMessage, setUploadInfoMessage] = useState("");
   const [successOrderId, setSuccessOrderId] = useState("");
+  const [livePaymentMode, setLivePaymentMode] = useState<PaymentMode | null>(null);
+  const [liveDepositType, setLiveDepositType] = useState<DepositType | null>(null);
+  const [liveDepositValue, setLiveDepositValue] = useState<number | null>(null);
+  const [liveStripeEnabled, setLiveStripeEnabled] = useState<boolean | null>(null);
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<PhotoSelection[]>([]);
+
+  const refreshCheckoutConfig = useCallback(async () => {
+    if (!photographer?.id) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/public/checkout-config?photographerId=${encodeURIComponent(photographer.id)}`,
+        { method: "GET", cache: "no-store" }
+      );
+      const payload = await parseApiPayload<CheckoutConfigPayload>(response);
+      if (!response.ok) {
+        return;
+      }
+
+      setLivePaymentMode(payload.paymentMode || null);
+      setLiveDepositType(payload.depositType || null);
+      setLiveDepositValue(
+        Number.isFinite(payload.depositValue as number) ? (payload.depositValue as number) : null
+      );
+      setLiveStripeEnabled(typeof payload.stripeEnabled === "boolean" ? payload.stripeEnabled : null);
+    } catch {
+      // Keep current in-memory checkout state when sync fails.
+    }
+  }, [photographer?.id]);
+
+  useEffect(() => {
+    void refreshCheckoutConfig();
+  }, [refreshCheckoutConfig]);
+
+  useEffect(() => {
+    if (step !== "checkout") {
+      return;
+    }
+
+    void refreshCheckoutConfig();
+  }, [refreshCheckoutConfig, step]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void refreshCheckoutConfig();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCheckoutConfig();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refreshCheckoutConfig]);
+
+  const effectivePhotographer = useMemo(() => {
+    if (!photographer) {
+      return null;
+    }
+
+    return {
+      ...photographer,
+      payment_mode: livePaymentMode || photographer.payment_mode,
+      deposit_type: liveDepositType || photographer.deposit_type,
+      deposit_value:
+        liveDepositValue !== null && liveDepositValue !== undefined
+          ? liveDepositValue
+          : photographer.deposit_value,
+    };
+  }, [liveDepositType, liveDepositValue, livePaymentMode, photographer]);
+
+  const effectiveStripeEnabled = liveStripeEnabled ?? stripeEnabled;
 
   const customerFullName = useMemo(
     () => getCustomerFullName(customerFirstName, customerLastName),
@@ -287,22 +376,22 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   );
   const totalCents = useMemo(() => computeTotal(photos, formats), [photos, formats]);
   const paymentPlan = useMemo(
-    () => getCheckoutAmounts(totalCents, photographer, { stripeAvailable: stripeEnabled }),
-    [totalCents, photographer, stripeEnabled]
+    () => getCheckoutAmounts(totalCents, effectivePhotographer, { stripeAvailable: effectiveStripeEnabled }),
+    [effectivePhotographer, effectiveStripeEnabled, totalCents]
   );
   const depositPolicyLabel = useMemo(() => {
     if (paymentPlan.mode !== "deposit_plus_studio") {
       return "";
     }
 
-    const depositType = photographer?.deposit_type || "percentage";
-    const rawValue = photographer?.deposit_value ?? 30;
+    const depositType = effectivePhotographer?.deposit_type || "percentage";
+    const rawValue = effectivePhotographer?.deposit_value ?? 30;
     if (depositType === "fixed") {
       return `Acconto configurato dallo studio: ${formatCurrency(rawValue)} fissi.`;
     }
 
     return `Acconto configurato dallo studio: ${rawValue}% del totale.`;
-  }, [paymentPlan.mode, photographer]);
+  }, [effectivePhotographer, paymentPlan.mode]);
   const activeFormat = useMemo(
     () => formats.find((format) => format.id === activeFormatId) || null,
     [formats, activeFormatId]
@@ -322,7 +411,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     isValidPhone(customerPhone);
   const canMoveToFormat = photos.length > 0 && formats.length > 0;
   const canCheckout = photos.length > 0 && allFormatsAssigned;
-  const paymentBlocked = paymentPlan.mode === "online_full" && !stripeEnabled;
+  const paymentBlocked = paymentPlan.mode === "online_full" && !effectiveStripeEnabled;
   const stepOrder: ActiveWizardStep[] = ["customer", "upload", "format", "checkout"];
   const stepTitles: Record<ActiveWizardStep, string> = {
     customer: "Dati cliente",
@@ -1080,9 +1169,9 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                   </>
                 ) : paymentPlan.mode === "online_full" ? (
                   "Vai al pagamento sicuro"
-                ) : paymentPlan.mode === "deposit_plus_studio" && stripeEnabled ? (
+                ) : paymentPlan.mode === "deposit_plus_studio" && effectiveStripeEnabled ? (
                   "Paga l'acconto online"
-                ) : paymentPlan.mode === "deposit_plus_studio" && !stripeEnabled ? (
+                ) : paymentPlan.mode === "deposit_plus_studio" && !effectiveStripeEnabled ? (
                   "Invia ordine allo studio"
                 ) : (
                   "Invia ordine allo studio"

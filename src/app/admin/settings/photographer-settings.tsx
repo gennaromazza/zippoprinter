@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, Loader2, Store } from "lucide-react";
+import { CreditCard, Loader2, LogOut, Store } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getStudioHref } from "@/lib/studio-paths";
@@ -14,6 +14,7 @@ import {
   normalizeHexColor,
 } from "@/lib/storefront-branding";
 import type {
+  PaymentMode,
   Photographer,
   StorefrontBgScope,
   StorefrontCtaAlign,
@@ -57,6 +58,23 @@ function clampPercent(value: number | null | undefined) {
 
 function formatMegabytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatInitialDepositValue(type: "percentage" | "fixed" | null | undefined, value: number | null | undefined) {
+  if (!value) {
+    return "30";
+  }
+
+  if (type === "fixed") {
+    return (value / 100).toFixed(2);
+  }
+
+  return String(value);
+}
+
+function normalizeDepositValueForCompare(value: string) {
+  const parsed = Number.parseFloat(value.replace(",", ".").trim());
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function readImageDimensions(file: File) {
@@ -148,20 +166,125 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
   const [storefrontCtaAlign, setStorefrontCtaAlign] = useState<StorefrontCtaAlign>(
     (photographer?.storefront_cta_align as StorefrontCtaAlign) || "left"
   );
-  const [paymentMode, setPaymentMode] = useState(photographer?.payment_mode || "pay_in_store");
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>(
+    (photographer?.payment_mode as PaymentMode) || "pay_in_store"
+  );
   const [stripeModalOpen, setStripeModalOpen] = useState(false);
   const [stripeEntryState, setStripeEntryState] = useState<"refresh" | "return" | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
-  const [depositValue, setDepositValue] = useState(() => {
-    if (!photographer?.deposit_value) return "30";
-    if (photographer.deposit_type === "fixed") {
-      return (photographer.deposit_value / 100).toFixed(2);
-    }
-    return String(photographer.deposit_value);
-  });
+  const [depositValue, setDepositValue] = useState(
+    formatInitialDepositValue(photographer?.deposit_type, photographer?.deposit_value)
+  );
   const router = useRouter();
   const supabase = createClient();
   const publicUrl = photographer?.id ? getStudioHref(photographer.id) : "/studio";
+  const savedPaymentMode = (photographer?.payment_mode as PaymentMode | null) || "pay_in_store";
+  const savedDepositType = photographer?.deposit_type || "percentage";
+  const savedDepositValue = formatInitialDepositValue(
+    photographer?.deposit_type,
+    photographer?.deposit_value
+  );
+  const currentDepositForCompare = normalizeDepositValueForCompare(depositValue);
+  const savedDepositForCompare = normalizeDepositValueForCompare(savedDepositValue);
+  const paymentConfigDirty =
+    paymentMode !== savedPaymentMode ||
+    (paymentMode === "deposit_plus_studio" &&
+      (depositType !== savedDepositType ||
+        currentDepositForCompare !== savedDepositForCompare));
+
+  const persistPaymentMode = async (nextPaymentMode: PaymentMode) => {
+    if (!photographer?.id) {
+      return false;
+    }
+
+    let normalizedDepositValue: number | null = null;
+    if (nextPaymentMode === "deposit_plus_studio") {
+      const parsedDepositValue = Number.parseFloat(depositValue.replace(",", "."));
+      if (!Number.isFinite(parsedDepositValue) || parsedDepositValue <= 0) {
+        setMessage("Errore: inserisci un valore acconto valido.");
+        return false;
+      }
+
+      if (depositType === "fixed") {
+        if (parsedDepositValue > 100000) {
+          setMessage("Errore: importo acconto troppo alto.");
+          return false;
+        }
+        normalizedDepositValue = Math.round(parsedDepositValue * 100);
+      } else {
+        if (parsedDepositValue < 1 || parsedDepositValue > 100) {
+          setMessage("Errore: la percentuale acconto deve essere tra 1 e 100.");
+          return false;
+        }
+        normalizedDepositValue = Math.round(parsedDepositValue);
+      }
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    let { error } = await supabase
+      .from("photographers")
+      .update({
+        payment_mode: nextPaymentMode,
+        deposit_type: nextPaymentMode === "deposit_plus_studio" ? depositType : null,
+        deposit_value: normalizedDepositValue,
+      })
+      .eq("id", photographer.id);
+
+    let paymentSchemaMissing = false;
+    if (error && isMissingPaymentSchemaError(error.message)) {
+      paymentSchemaMissing = true;
+      error = null;
+    }
+
+    setLoading(false);
+
+    if (error) {
+      setMessage("Errore nel salvataggio della modalita pagamento.");
+      return false;
+    }
+
+    if (paymentSchemaMissing) {
+      setMessage("Stripe collegato. Esegui la migration 003 per attivare le modalita pagamento.");
+      return false;
+    }
+
+    if (nextPaymentMode === "online_full") {
+      setMessage("Modalita checkout aggiornata: pagamento online completo attivo lato cliente.");
+    } else if (nextPaymentMode === "deposit_plus_studio") {
+      setMessage("Modalita checkout aggiornata: acconto online + saldo in studio attivo lato cliente.");
+    } else {
+      setMessage("Modalita checkout aggiornata: pagamento in studio attivo lato cliente.");
+    }
+    router.refresh();
+    return true;
+  };
+
+  const checkStripeConnectReady = async () => {
+    try {
+      const response = await fetch("/api/admin/billing/connect/status", { method: "GET" });
+      const payload = (await response.json()) as { connectReady?: boolean; error?: string };
+      if (!response.ok) {
+        setMessage(payload.error || "Impossibile verificare lo stato Stripe.");
+        return false;
+      }
+
+      return Boolean(payload.connectReady);
+    } catch {
+      setMessage("Errore verifica Stripe. Riprova tra qualche secondo.");
+      return false;
+    }
+  };
+
+  const handleStripeModalOpenChange = (open: boolean) => {
+    setStripeModalOpen(open);
+
+    if (!open) {
+      setStripeEntryState(null);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -229,6 +352,9 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
     );
     setStorefrontColorText(normalizeHexColor(photographer?.storefront_color_text, "#2B211C"));
     setStorefrontCtaAlign((photographer?.storefront_cta_align as StorefrontCtaAlign) || "left");
+    setPaymentMode((photographer?.payment_mode as PaymentMode) || "pay_in_store");
+    setDepositType(photographer?.deposit_type || "percentage");
+    setDepositValue(formatInitialDepositValue(photographer?.deposit_type, photographer?.deposit_value));
   }, [photographer]);
 
   const storefrontPrimaryContrast = getContrastTextColor(storefrontColorPrimary);
@@ -294,6 +420,18 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       }
     }
 
+    if (paymentMode === "online_full") {
+      const connectReady = await checkStripeConnectReady();
+      if (!connectReady) {
+        setLoading(false);
+        setStripeModalOpen(true);
+        setMessage(
+          "Stripe non e ancora pronto per gli incassi online. Completa onboarding/abilitazione, poi conferma di nuovo la modalita checkout."
+        );
+        return;
+      }
+    }
+
     const basePayload = {
       name: formData.get("name"),
       logo_url: normalizedLogoUrl,
@@ -348,7 +486,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
       setMessage(
         paymentSchemaMissing
           ? "Branding salvato. Le opzioni pagamento saranno disponibili dopo la migration 003."
-          : "Impostazioni aggiornate correttamente."
+          : `Impostazioni aggiornate correttamente. Modalita attiva cliente: ${getPaymentModeLabel(paymentMode)}.`
       );
       router.refresh();
     }
@@ -500,7 +638,41 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
 
   const handleSelectOnlineFull = () => {
     setPaymentMode("online_full");
+    setMessage(
+      "Online completo selezionato. Completa Stripe (se necessario) e conferma la modalita checkout cliente."
+    );
     setStripeModalOpen(true);
+  };
+
+  const handleConfirmPaymentMode = async () => {
+    if (paymentMode === "online_full") {
+      const connectReady = await checkStripeConnectReady();
+      if (!connectReady) {
+        setStripeModalOpen(true);
+        setMessage(
+          "Stripe non e ancora pronto per gli incassi online. Completa onboarding/abilitazione, poi conferma di nuovo la modalita checkout."
+        );
+        return;
+      }
+    }
+
+    await persistPaymentMode(paymentMode);
+  };
+
+  const handleOpenStripeSetup = () => {
+    if (paymentMode !== "online_full") {
+      setPaymentMode("online_full");
+      setMessage(
+        "Online completo selezionato. Completa Stripe e poi conferma la modalita checkout cliente."
+      );
+    }
+    setStripeModalOpen(true);
+  };
+
+  const handlePhotographerLogout = async () => {
+    setSigningOut(true);
+    await supabase.auth.signOut();
+    router.push("/login");
   };
 
   return (
@@ -739,7 +911,8 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               <Input
                 id="website_url"
                 name="website_url"
-                type="url"
+                type="text"
+                inputMode="url"
                 defaultValue={photographer?.website_url || ""}
                 placeholder="https://www.miosito.it"
               />
@@ -749,7 +922,8 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               <Input
                 id="instagram_url"
                 name="instagram_url"
-                type="url"
+                type="text"
+                inputMode="url"
                 defaultValue={photographer?.instagram_url || ""}
                 placeholder="https://instagram.com/mio_studio"
               />
@@ -1037,6 +1211,9 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
                   Ogni studio usa una sola modalita attiva per il checkout pubblico.
                 </p>
+                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Stato salvato lato cliente: {getPaymentModeLabel(savedPaymentMode)}
+                </p>
               </div>
               <span className="rounded-full border border-[color:var(--border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
                 {getPaymentModeLabel(paymentMode)}
@@ -1134,6 +1311,48 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               </>
             )}
 
+            <div className="mt-4 rounded-[1.2rem] border border-[color:var(--border)] bg-white/80 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Conferma modalita checkout cliente</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {paymentConfigDirty
+                      ? "Hai modifiche non salvate: conferma per pubblicare subito la modalita sul frontend cliente."
+                      : "Frontend cliente gia allineato alla configurazione salvata."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void handleConfirmPaymentMode();
+                  }}
+                  disabled={loading || !paymentConfigDirty}
+                  className="md:shrink-0"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Conferma in corso
+                    </>
+                  ) : (
+                    "Conferma modalita cliente"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {message ? (
+              <p
+                className={`mt-3 rounded-xl border px-3 py-2 text-sm font-medium ${
+                  message.startsWith("Errore")
+                    ? "border-red-200 bg-red-50 text-red-800"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                }`}
+              >
+                {message}
+              </p>
+            ) : null}
+
             <div className="mt-4 rounded-[1.4rem] border border-primary/30 bg-primary/5 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -1141,12 +1360,35 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
                     Vuoi ricevere pagamenti online? Configura Stripe.
                   </p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Collega Stripe Connect una volta e abilita subito gli incassi online.
+                    Collega Stripe Connect, chiudi la modale e poi conferma la modalita checkout cliente col pulsante dedicato.
                   </p>
                 </div>
-                <Button type="button" onClick={() => setStripeModalOpen(true)} className="md:shrink-0">
-                  Configura Stripe
-                </Button>
+                <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                  <Button type="button" onClick={handleOpenStripeSetup} className="md:shrink-0">
+                    Configura Stripe
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      void handlePhotographerLogout();
+                    }}
+                    disabled={signingOut}
+                    className="md:shrink-0"
+                  >
+                    {signingOut ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Logout
+                      </>
+                    ) : (
+                      <>
+                        <LogOut className="h-4 w-4" />
+                        Logout fotografo
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1192,12 +1434,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
 
       <Dialog
         open={stripeModalOpen}
-        onOpenChange={(open) => {
-          setStripeModalOpen(open);
-          if (!open) {
-            setStripeEntryState(null);
-          }
-        }}
+        onOpenChange={handleStripeModalOpenChange}
       >
         <DialogContent className="max-w-3xl p-0">
           <div className="p-6 md:p-8">
