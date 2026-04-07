@@ -56,15 +56,15 @@ export function getConnectedStripeClientForTenant(
     return null;
   }
 
+  if (!stripeSecretKey) {
+    return null;
+  }
+
   const connectedAccountId = billingAccount.stripe_connect_account_id;
   const cacheKey = getConnectCacheKey(stripeSecretKey, connectedAccountId);
   const cached = stripeConnectClientCache.get(cacheKey);
   if (cached) {
     return cached;
-  }
-
-  if (!stripeSecretKey) {
-    return null;
   }
 
   const scoped = new Stripe(stripeSecretKey, {
@@ -85,14 +85,14 @@ export function getConnectedStripeClientByAccountId(connectedAccountId: string |
     return null;
   }
 
+  if (!stripeSecretKey) {
+    return null;
+  }
+
   const cacheKey = getConnectCacheKey(stripeSecretKey, connectedAccountId);
   const cached = stripeConnectClientCache.get(cacheKey);
   if (cached) {
     return cached;
-  }
-
-  if (!stripeSecretKey) {
-    return null;
   }
 
   const scoped = new Stripe(stripeSecretKey, {
