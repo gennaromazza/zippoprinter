@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -20,6 +21,7 @@ import {
 import { formatCurrency } from "@/lib/orders";
 import { getCheckoutAmounts, getPaymentModeLabel } from "@/lib/payments";
 import { getUnitPriceForQuantity } from "@/lib/pricing";
+import { LEGAL_DOCUMENT_VERSION, LEGAL_LINKS } from "@/lib/privacy-consent";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import type { DepositType, PaymentMode, Photographer, PrintFormat } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,30 @@ interface OrderPayload {
   checkoutUrl?: string;
 }
 
+type UploadStage = "idle" | "preparing" | "uploading" | "creating-order";
+
+interface UploadProgressState {
+  stage: UploadStage;
+  uploadedFiles: number;
+  totalFiles: number;
+  currentBatch: number;
+  totalBatches: number;
+}
+
+interface SuccessOrderResult {
+  orderId: string;
+  checkoutUrl?: string;
+}
+
+interface CouponValidationPayload {
+  valid?: boolean;
+  code?: string;
+  discountCents?: number;
+  message?: string;
+  error?: string;
+  errorCode?: string;
+}
+
 interface CheckoutConfigPayload {
   paymentMode?: PaymentMode;
   depositType?: DepositType | null;
@@ -76,7 +102,10 @@ const PHOTO_MIN_HEIGHT = 800;
 const PHOTO_MAX_SOURCE_WIDTH = 12000;
 const PHOTO_MAX_SOURCE_HEIGHT = 12000;
 const PHOTO_MAX_OUTPUT_DIMENSION = 6000;
-const MAX_PHOTOS_PER_ORDER = 500;
+const MAX_PHOTOS_PER_ORDER = 300;
+const MAX_ORDERS_PER_SUBMISSION = 2;
+const MAX_PHOTOS_PER_SUBMISSION = MAX_PHOTOS_PER_ORDER * MAX_ORDERS_PER_SUBMISSION;
+const UPLOAD_CONCURRENCY = 5;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_REGEX = /^\+?[\d\s\-().]{6,20}$/;
@@ -251,6 +280,27 @@ function getCustomerFullName(firstName: string, lastName: string) {
   return `${firstName.trim()} ${lastName.trim()}`.trim();
 }
 
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function getUploadStageLabel(stage: UploadStage) {
+  switch (stage) {
+    case "preparing":
+      return "Preparazione upload";
+    case "uploading":
+      return "Caricamento immagini";
+    case "creating-order":
+      return "Creazione ordine";
+    default:
+      return "In attesa";
+  }
+}
+
 async function parseApiPayload<T>(response: Response): Promise<T> {
   const rawText = await response.text();
 
@@ -269,15 +319,45 @@ async function parseApiPayload<T>(response: Response): Promise<T> {
   }
 }
 
+async function recordPublicOrderConsent(input: {
+  photographerId: string;
+  customerEmail: string;
+}) {
+  try {
+    await fetch("/api/public/privacy-consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "public_order",
+        consentKey: "privacy_notice",
+        consentGranted: true,
+        consentVersion: LEGAL_DOCUMENT_VERSION,
+        decision: "acknowledged",
+        subjectType: "customer",
+        subjectIdentifier: input.customerEmail.trim().toLowerCase(),
+        tenantId: input.photographerId,
+        metadata: {
+          flow: "storefront_upload_wizard",
+        },
+      }),
+    });
+  } catch {
+    // Never block checkout if consent logging endpoint is temporarily unavailable.
+  }
+}
+
 export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormProps) {
   const supabase = createSupabaseClient();
   const [photos, setPhotos] = useState<PhotoSelection[]>([]);
   const [activeFormatId, setActiveFormatId] = useState("");
   const [formatPhase, setFormatPhase] = useState<"assign" | "quantity">("assign");
+  const [formatFilter, setFormatFilter] = useState<string>("all");
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerFirstName, setCustomerFirstName] = useState("");
   const [customerLastName, setCustomerLastName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [step, setStep] = useState<WizardStep>("customer");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -285,11 +365,28 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const [phoneError, setPhoneError] = useState("");
   const [uploadWarningMessage, setUploadWarningMessage] = useState("");
   const [uploadInfoMessage, setUploadInfoMessage] = useState("");
-  const [successOrderId, setSuccessOrderId] = useState("");
+  const [isPreparingFiles, setIsPreparingFiles] = useState(false);
+  const [prepareProgress, setPrepareProgress] = useState({ current: 0, total: 0 });
+  const [successOrders, setSuccessOrders] = useState<SuccessOrderResult[]>([]);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({
+    stage: "idle",
+    uploadedFiles: 0,
+    totalFiles: 0,
+    currentBatch: 0,
+    totalBatches: 0,
+  });
   const [livePaymentMode, setLivePaymentMode] = useState<PaymentMode | null>(null);
   const [liveDepositType, setLiveDepositType] = useState<DepositType | null>(null);
   const [liveDepositValue, setLiveDepositValue] = useState<number | null>(null);
   const [liveStripeEnabled, setLiveStripeEnabled] = useState<boolean | null>(null);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState("");
+  const [couponDiscountCents, setCouponDiscountCents] = useState(0);
+  const [couponValidatedTotalCents, setCouponValidatedTotalCents] = useState<number | null>(null);
+  const [couponMessage, setCouponMessage] = useState("");
+  const [couponError, setCouponError] = useState("");
+  const [couponValidating, setCouponValidating] = useState(false);
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<PhotoSelection[]>([]);
@@ -375,9 +472,16 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     [customerFirstName, customerLastName]
   );
   const totalCents = useMemo(() => computeTotal(photos, formats), [photos, formats]);
+  const discountedTotalCents = useMemo(
+    () => Math.max(totalCents - couponDiscountCents, 0),
+    [couponDiscountCents, totalCents]
+  );
   const paymentPlan = useMemo(
-    () => getCheckoutAmounts(totalCents, effectivePhotographer, { stripeAvailable: effectiveStripeEnabled }),
-    [effectivePhotographer, effectiveStripeEnabled, totalCents]
+    () =>
+      getCheckoutAmounts(discountedTotalCents, effectivePhotographer, {
+        stripeAvailable: effectiveStripeEnabled,
+      }),
+    [discountedTotalCents, effectivePhotographer, effectiveStripeEnabled]
   );
   const depositPolicyLabel = useMemo(() => {
     if (paymentPlan.mode !== "deposit_plus_studio") {
@@ -408,10 +512,47 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     Boolean(customerLastName.trim()) &&
     Boolean(customerPhone.trim()) &&
     isValidEmail(customerEmail) &&
-    isValidPhone(customerPhone);
+    isValidPhone(customerPhone) &&
+    privacyAccepted;
   const canMoveToFormat = photos.length > 0 && formats.length > 0;
   const canCheckout = photos.length > 0 && allFormatsAssigned;
   const paymentBlocked = paymentPlan.mode === "online_full" && !effectiveStripeEnabled;
+  const pricingInsights = useMemo(() => {
+    let baseTotalCents = 0;
+    let quantityTotalCents = 0;
+    let quantityPromoItems = 0;
+
+    for (const photo of photos) {
+      const format = formats.find((item) => item.id === photo.formatId);
+      if (!format) {
+        continue;
+      }
+
+      const quantity = Math.min(10, Math.max(1, Math.round(photo.quantity)));
+      const baseUnitPriceCents = format.price_cents;
+      const tierUnitPriceCents = getUnitPriceForQuantity(format, quantity);
+
+      baseTotalCents += baseUnitPriceCents * quantity;
+      quantityTotalCents += tierUnitPriceCents * quantity;
+
+      if (tierUnitPriceCents < baseUnitPriceCents) {
+        quantityPromoItems += 1;
+      }
+    }
+
+    const quantityDiscountCents = Math.max(baseTotalCents - quantityTotalCents, 0);
+    const hasCouponPromo = Boolean(appliedCouponCode) && couponDiscountCents > 0;
+    const hasQuantityPromo = quantityDiscountCents > 0;
+
+    return {
+      quantityDiscountCents,
+      totalDiscountCents: quantityDiscountCents + couponDiscountCents,
+      activePromotionsCount: (hasCouponPromo ? 1 : 0) + (hasQuantityPromo ? 1 : 0),
+      hasCouponPromo,
+      hasQuantityPromo,
+      quantityPromoItems,
+    };
+  }, [appliedCouponCode, couponDiscountCents, formats, photos]);
   const stepOrder: ActiveWizardStep[] = ["customer", "upload", "format", "checkout"];
   const stepTitles: Record<ActiveWizardStep, string> = {
     customer: "Dati cliente",
@@ -421,6 +562,26 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   };
   const currentStepIndex = Math.max(0, stepOrder.indexOf(step as ActiveWizardStep));
   const currentStepTitle = stepTitles[(step as ActiveWizardStep) || "customer"] || stepTitles.customer;
+  const uploadProgressPercent =
+    uploadProgress.totalFiles > 0
+      ? Math.min(100, Math.round((uploadProgress.uploadedFiles / uploadProgress.totalFiles) * 100))
+      : 0;
+  const uploadProgressLabel = getUploadStageLabel(uploadProgress.stage);
+
+  useEffect(() => {
+    if (!appliedCouponCode) {
+      return;
+    }
+
+    if (couponValidatedTotalCents === totalCents) {
+      return;
+    }
+
+    setAppliedCouponCode("");
+    setCouponDiscountCents(0);
+    setCouponValidatedTotalCents(null);
+    setCouponMessage("Il coupon e stato rimosso: totale ordine modificato.");
+  }, [appliedCouponCode, couponValidatedTotalCents, totalCents]);
 
   useEffect(() => {
     photosRef.current = photos;
@@ -458,6 +619,27 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
       }),
     [photos, formats]
   );
+  const formatCountMap = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const photo of photos) {
+      const key = photo.formatId || "unassigned";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [photos]);
+  const filteredCartItems = useMemo(() => {
+    if (formatFilter === "all") {
+      return cartItems;
+    }
+    if (formatFilter === "unassigned") {
+      return cartItems.filter((item) => !item.formatId);
+    }
+    return cartItems.filter((item) => item.formatId === formatFilter);
+  }, [cartItems, formatFilter]);
+  const selectedInCurrentViewCount = useMemo(
+    () => filteredCartItems.filter((item) => selectedPhotoIds.includes(item.id)).length,
+    [filteredCartItems, selectedPhotoIds]
+  );
 
   const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -465,9 +647,11 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
       return;
     }
 
-    const remainingSlots = MAX_PHOTOS_PER_ORDER - photos.length;
+    const remainingSlots = MAX_PHOTOS_PER_SUBMISSION - photos.length;
     if (remainingSlots <= 0) {
-      setUploadWarningMessage(`Hai raggiunto il limite massimo di ${MAX_PHOTOS_PER_ORDER} foto per ordine.`);
+      setUploadWarningMessage(
+        `Hai raggiunto il limite massimo di ${MAX_PHOTOS_PER_SUBMISSION} foto per invio. Per altre immagini devi creare un nuovo ordine.`
+      );
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -475,7 +659,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     const filesToProcess = files.slice(0, remainingSlots);
     if (files.length > remainingSlots) {
       setUploadWarningMessage(
-        `Puoi aggiungere ancora ${remainingSlots} foto (limite: ${MAX_PHOTOS_PER_ORDER}). ${files.length - remainingSlots} file ignorati.`
+        `Puoi aggiungere ancora ${remainingSlots} foto (limite invio: ${MAX_PHOTOS_PER_SUBMISSION}). ${files.length - remainingSlots} file ignorati.`
       );
     } else {
       setUploadWarningMessage("");
@@ -483,105 +667,117 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
 
     setErrorMessage("");
     setUploadInfoMessage("");
+    setIsPreparingFiles(true);
+    setPrepareProgress({ current: 0, total: filesToProcess.length });
 
     const rejectedMessages: string[] = [];
     const compressedMessages: string[] = [];
     const acceptedPhotos: PhotoSelection[] = [];
+    try {
+      for (const originalFile of filesToProcess) {
+        if (!originalFile.type.startsWith("image/")) {
+          rejectedMessages.push(`${originalFile.name}: formato non supportato.`);
+          setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+          continue;
+        }
 
-    for (const originalFile of filesToProcess) {
-      if (!originalFile.type.startsWith("image/")) {
-        rejectedMessages.push(`${originalFile.name}: formato non supportato.`);
-        continue;
-      }
-
-      let imageSize: { width: number; height: number };
-      try {
-        imageSize = await readImageSize(originalFile);
-      } catch {
-        rejectedMessages.push(`${originalFile.name}: file non leggibile come immagine.`);
-        continue;
-      }
-
-      if (imageSize.width < PHOTO_MIN_WIDTH || imageSize.height < PHOTO_MIN_HEIGHT) {
-        rejectedMessages.push(
-          `${originalFile.name}: risoluzione troppo bassa (${imageSize.width}x${imageSize.height}px). Minimo ${PHOTO_MIN_WIDTH}x${PHOTO_MIN_HEIGHT}px.`
-        );
-        continue;
-      }
-
-      if (imageSize.width > PHOTO_MAX_SOURCE_WIDTH || imageSize.height > PHOTO_MAX_SOURCE_HEIGHT) {
-        rejectedMessages.push(
-          `${originalFile.name}: risoluzione troppo alta (${imageSize.width}x${imageSize.height}px). Massimo ${PHOTO_MAX_SOURCE_WIDTH}x${PHOTO_MAX_SOURCE_HEIGHT}px.`
-        );
-        continue;
-      }
-
-      let fileToUpload = originalFile;
-      const shouldCompress =
-        originalFile.size > PHOTO_COMPRESS_TRIGGER_BYTES ||
-        Math.max(imageSize.width, imageSize.height) > PHOTO_MAX_OUTPUT_DIMENSION;
-
-      if (shouldCompress) {
+        let imageSize: { width: number; height: number };
         try {
-          const compressedFile = await compressImageForUpload(originalFile);
-          if (compressedFile.size < originalFile.size) {
-            fileToUpload = compressedFile;
-            compressedMessages.push(
-              `${originalFile.name}: ${formatMegabytes(originalFile.size)} -> ${formatMegabytes(compressedFile.size)}`
-            );
-          }
+          imageSize = await readImageSize(originalFile);
         } catch {
-          if (originalFile.size > PHOTO_MAX_BYTES) {
-            rejectedMessages.push(
-              `${originalFile.name}: troppo pesante e non comprimibile automaticamente.`
-            );
-            continue;
+          rejectedMessages.push(`${originalFile.name}: file non leggibile come immagine.`);
+          setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+          continue;
+        }
+
+        if (imageSize.width < PHOTO_MIN_WIDTH || imageSize.height < PHOTO_MIN_HEIGHT) {
+          rejectedMessages.push(
+            `${originalFile.name}: risoluzione troppo bassa (${imageSize.width}x${imageSize.height}px). Minimo ${PHOTO_MIN_WIDTH}x${PHOTO_MIN_HEIGHT}px.`
+          );
+          setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+          continue;
+        }
+
+        if (imageSize.width > PHOTO_MAX_SOURCE_WIDTH || imageSize.height > PHOTO_MAX_SOURCE_HEIGHT) {
+          rejectedMessages.push(
+            `${originalFile.name}: risoluzione troppo alta (${imageSize.width}x${imageSize.height}px). Massimo ${PHOTO_MAX_SOURCE_WIDTH}x${PHOTO_MAX_SOURCE_HEIGHT}px.`
+          );
+          setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+          continue;
+        }
+
+        let fileToUpload = originalFile;
+        const shouldCompress =
+          originalFile.size > PHOTO_COMPRESS_TRIGGER_BYTES ||
+          Math.max(imageSize.width, imageSize.height) > PHOTO_MAX_OUTPUT_DIMENSION;
+
+        if (shouldCompress) {
+          try {
+            const compressedFile = await compressImageForUpload(originalFile);
+            if (compressedFile.size < originalFile.size) {
+              fileToUpload = compressedFile;
+              compressedMessages.push(
+                `${originalFile.name}: ${formatMegabytes(originalFile.size)} -> ${formatMegabytes(compressedFile.size)}`
+              );
+            }
+          } catch {
+            if (originalFile.size > PHOTO_MAX_BYTES) {
+              rejectedMessages.push(
+                `${originalFile.name}: troppo pesante e non comprimibile automaticamente.`
+              );
+              setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+              continue;
+            }
           }
         }
+
+        if (fileToUpload.size > PHOTO_MAX_BYTES) {
+          rejectedMessages.push(
+            `${originalFile.name}: supera il limite massimo ${formatMegabytes(PHOTO_MAX_BYTES)}.`
+          );
+          setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
+          continue;
+        }
+
+        acceptedPhotos.push({
+          id: crypto.randomUUID(),
+          file: fileToUpload,
+          preview: URL.createObjectURL(fileToUpload),
+          formatId: "",
+          quantity: 1,
+        });
+        setPrepareProgress((current) => ({ ...current, current: current.current + 1 }));
       }
 
-      if (fileToUpload.size > PHOTO_MAX_BYTES) {
-        rejectedMessages.push(
-          `${originalFile.name}: supera il limite massimo ${formatMegabytes(PHOTO_MAX_BYTES)}.`
+      if (acceptedPhotos.length > 0) {
+        setPhotos((current) => [...current, ...acceptedPhotos]);
+      }
+
+      if (compressedMessages.length > 0) {
+        const maxExamples = 3;
+        const examples = compressedMessages.slice(0, maxExamples);
+        const extraCount = compressedMessages.length - examples.length;
+        const extraSuffix = extraCount > 0 ? `\n+ altre ${extraCount} immagini ottimizzate.` : "";
+        setUploadInfoMessage(
+          `Ottimizzazione automatica completata su ${compressedMessages.length} immagini:\n- ${examples.join("\n- ")}${extraSuffix}`
         );
-        continue;
       }
 
-      acceptedPhotos.push({
-        id: crypto.randomUUID(),
-        file: fileToUpload,
-        preview: URL.createObjectURL(fileToUpload),
-        formatId: "",
-        quantity: 1,
-      });
-    }
-
-    if (acceptedPhotos.length > 0) {
-      setPhotos((current) => [...current, ...acceptedPhotos]);
-    }
-
-    if (compressedMessages.length > 0) {
-      const maxExamples = 3;
-      const examples = compressedMessages.slice(0, maxExamples);
-      const extraCount = compressedMessages.length - examples.length;
-      const extraSuffix = extraCount > 0 ? `\n+ altre ${extraCount} immagini ottimizzate.` : "";
-      setUploadInfoMessage(
-        `Ottimizzazione automatica completata su ${compressedMessages.length} immagini:\n- ${examples.join("\n- ")}${extraSuffix}`
-      );
-    }
-
-    if (rejectedMessages.length > 0) {
-      const maxExamples = 5;
-      const examples = rejectedMessages.slice(0, maxExamples);
-      const extraCount = rejectedMessages.length - examples.length;
-      const extraSuffix = extraCount > 0 ? `\n+ altri ${extraCount} file non caricati.` : "";
-      setUploadWarningMessage(
-        `Alcuni file non rispettano i requisiti e non sono stati caricati:\n- ${examples.join("\n- ")}${extraSuffix}`
-      );
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      if (rejectedMessages.length > 0) {
+        const maxExamples = 5;
+        const examples = rejectedMessages.slice(0, maxExamples);
+        const extraCount = rejectedMessages.length - examples.length;
+        const extraSuffix = extraCount > 0 ? `\n+ altri ${extraCount} file non caricati.` : "";
+        setUploadWarningMessage(
+          `Alcuni file non rispettano i requisiti e non sono stati caricati:\n- ${examples.join("\n- ")}${extraSuffix}`
+        );
+      }
+    } finally {
+      setIsPreparingFiles(false);
+      setPrepareProgress({ current: 0, total: 0 });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -594,6 +790,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
 
       return current.filter((photo) => photo.id !== id);
     });
+    setSelectedPhotoIds((current) => current.filter((photoId) => photoId !== id));
   };
 
   const updatePhoto = (id: string, updates: Partial<PhotoSelection>) => {
@@ -610,18 +807,72 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     updatePhoto(id, { formatId: activeFormatId });
   };
 
+  const togglePhotoSelection = (id: string) => {
+    setSelectedPhotoIds((current) =>
+      current.includes(id) ? current.filter((photoId) => photoId !== id) : [...current, id]
+    );
+  };
+
+  const clearPhotoSelection = () => {
+    setSelectedPhotoIds([]);
+  };
+
+  const selectAllInCurrentView = () => {
+    const visibleIds = filteredCartItems.map((item) => item.id);
+    if (!visibleIds.length) {
+      return;
+    }
+    setSelectedPhotoIds(visibleIds);
+  };
+
+  const applyActiveFormatToSelected = () => {
+    if (!activeFormatId || selectedPhotoIds.length === 0) {
+      return;
+    }
+
+    setPhotos((current) =>
+      current.map((photo) =>
+        selectedPhotoIds.includes(photo.id) ? { ...photo, formatId: activeFormatId } : photo
+      )
+    );
+  };
+
+  const clearFormatFromSelected = () => {
+    if (selectedPhotoIds.length === 0) {
+      return;
+    }
+
+    setPhotos((current) =>
+      current.map((photo) =>
+        selectedPhotoIds.includes(photo.id) ? { ...photo, formatId: "" } : photo
+      )
+    );
+  };
+
   const applyActiveFormatToAll = () => {
     if (!activeFormatId) return;
+    if (!window.confirm(`Stai per applicare il formato attivo a ${photos.length} foto. Confermi?`)) {
+      return;
+    }
     setPhotos((current) => current.map((photo) => ({ ...photo, formatId: activeFormatId })));
+    clearPhotoSelection();
   };
 
   const applyActiveFormatToUnassigned = () => {
     if (!activeFormatId) return;
+    const affectedCount = photos.filter((photo) => !photo.formatId).length;
+    if (affectedCount === 0) {
+      return;
+    }
+    if (!window.confirm(`Stai per applicare il formato attivo a ${affectedCount} foto non assegnate. Confermi?`)) {
+      return;
+    }
     setPhotos((current) =>
       current.map((photo) =>
         photo.formatId ? photo : { ...photo, formatId: activeFormatId }
       )
     );
+    clearPhotoSelection();
   };
 
   const clearPhotoFormat = (id: string) => {
@@ -633,82 +884,248 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     updatePhoto(id, { quantity: safeQuantity });
   };
 
-  const submitOrder = async () => {
-    if (!photographer?.id || !canCheckout || !canMoveToUpload) {
+  useEffect(() => {
+    if (formatPhase !== "assign" && selectedPhotoIds.length > 0) {
+      setSelectedPhotoIds([]);
+    }
+  }, [formatPhase, selectedPhotoIds.length]);
+
+  useEffect(() => {
+    setSelectedPhotoIds((current) => current.filter((id) => photos.some((photo) => photo.id === id)));
+  }, [photos]);
+
+  const clearCouponState = () => {
+    setCouponCodeInput("");
+    setAppliedCouponCode("");
+    setCouponDiscountCents(0);
+    setCouponValidatedTotalCents(null);
+    setCouponError("");
+    setCouponMessage("");
+  };
+
+  const applyCouponCode = async () => {
+    if (!photographer?.id) {
+      setCouponError("Studio non disponibile per validare il coupon.");
       return;
     }
 
-    setLoading(true);
-    setErrorMessage("");
+    const code = couponCodeInput.trim();
+    if (!code) {
+      setCouponError("Inserisci un codice coupon.");
+      return;
+    }
+
+    setCouponValidating(true);
+    setCouponError("");
+    setCouponMessage("");
 
     try {
-      const uploadResponse = await fetch("/api/public/uploads", {
+      const response = await fetch("/api/public/coupons/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           photographerId: photographer.id,
-          files: photos.map((photo) => ({
-            clientId: photo.id,
-            originalFilename: photo.file.name,
-          })),
-        }),
-      });
-
-      const uploadPayload = await parseApiPayload<SignedUploadPayload>(uploadResponse);
-      if (!uploadResponse.ok || !uploadPayload.uploads?.length) {
-        throw new Error(uploadPayload.error || "Preparazione upload non riuscita.");
-      }
-
-      const uploadMap = new Map(uploadPayload.uploads.map((upload) => [upload.clientId, upload]));
-      for (const photo of photos) {
-        const target = uploadMap.get(photo.id);
-        if (!target) {
-          throw new Error("Una o piu immagini non hanno ricevuto un URL di upload valido.");
-        }
-
-        const { error: uploadError } = await supabase.storage
-          .from("photos")
-          .uploadToSignedUrl(target.storagePath, target.token, photo.file, {
-            contentType: photo.file.type || "application/octet-stream",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new Error("Caricamento immagini non riuscito. Riprova tra un attimo.");
-        }
-      }
-
-      const response = await fetch("/api/public/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photographerId: photographer.id,
-          idempotencyKey: idempotencyKeyRef.current,
+          couponCode: code,
+          orderTotalCents: totalCents,
           customerEmail: customerEmail.trim(),
-          customerFirstName: customerFirstName.trim(),
-          customerLastName: customerLastName.trim(),
-          customerPhone: customerPhone.trim(),
-          manifest: photos.map((photo) => ({
-            clientId: photo.id,
-            formatId: photo.formatId,
-            quantity: photo.quantity,
-            originalFilename: photo.file.name,
-            storagePath: uploadMap.get(photo.id)?.storagePath,
-          })),
         }),
       });
-      const payload = await parseApiPayload<OrderPayload>(response);
+
+      const payload = await parseApiPayload<CouponValidationPayload>(response);
 
       if (!response.ok) {
-        throw new Error(payload.error || "Preparazione ordine non riuscita.");
-      }
-
-      if (payload.paymentRequired && payload.checkoutUrl) {
-        window.location.href = payload.checkoutUrl;
+        setCouponError(payload.error || payload.message || "Validazione coupon non riuscita.");
         return;
       }
 
-      setSuccessOrderId(payload.orderId || "");
+      if (!payload.valid) {
+        setCouponError(payload.message || "Coupon non valido.");
+        return;
+      }
+
+      const normalizedCode = String(payload.code || code).trim().toUpperCase();
+      const discount = Math.max(0, Math.round(Number(payload.discountCents || 0)));
+      if (discount <= 0) {
+        setCouponError("Il coupon non e applicabile a questo ordine.");
+        return;
+      }
+
+      setAppliedCouponCode(normalizedCode);
+      setCouponCodeInput(normalizedCode);
+      setCouponDiscountCents(discount);
+      setCouponValidatedTotalCents(totalCents);
+      setCouponMessage(payload.message || "Coupon applicato con successo.");
+      setCouponError("");
+    } catch (error) {
+      setCouponError(
+        error instanceof Error ? error.message : "Errore durante la validazione coupon."
+      );
+    } finally {
+      setCouponValidating(false);
+    }
+  };
+
+  const submitOrder = async () => {
+    if (!photographer?.id || !canCheckout || !canMoveToUpload || !privacyAccepted) {
+      setErrorMessage("Conferma la privacy policy prima di inviare l'ordine.");
+      return;
+    }
+    if (photos.length > MAX_PHOTOS_PER_SUBMISSION) {
+      setErrorMessage(
+        `Hai selezionato ${photos.length} immagini. Il limite per invio e ${MAX_PHOTOS_PER_SUBMISSION}: crea un nuovo ordine per le foto restanti.`
+      );
+      return;
+    }
+
+    const photoBatches = chunkArray(photos, MAX_PHOTOS_PER_ORDER);
+
+    setLoading(true);
+    setErrorMessage("");
+    setSuccessOrders([]);
+    setSuccessMessage("");
+    setUploadProgress({
+      stage: "preparing",
+      uploadedFiles: 0,
+      totalFiles: photos.length,
+      currentBatch: 1,
+      totalBatches: photoBatches.length,
+    });
+
+    void recordPublicOrderConsent({
+      photographerId: photographer.id,
+      customerEmail,
+    });
+
+    try {
+      let uploadedFiles = 0;
+      const createdOrders: SuccessOrderResult[] = [];
+
+      for (let batchIndex = 0; batchIndex < photoBatches.length; batchIndex += 1) {
+        const batch = photoBatches[batchIndex];
+
+        setUploadProgress((current) => ({
+          ...current,
+          stage: "preparing",
+          currentBatch: batchIndex + 1,
+        }));
+
+        const uploadResponse = await fetch("/api/public/uploads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photographerId: photographer.id,
+            files: batch.map((photo) => ({
+              clientId: photo.id,
+              originalFilename: photo.file.name,
+            })),
+          }),
+        });
+
+        const uploadPayload = await parseApiPayload<SignedUploadPayload>(uploadResponse);
+        if (!uploadResponse.ok || !uploadPayload.uploads?.length) {
+          throw new Error(
+            uploadPayload.error || `Preparazione upload non riuscita per ordine ${batchIndex + 1}.`
+          );
+        }
+
+        const uploadMap = new Map(uploadPayload.uploads.map((upload) => [upload.clientId, upload]));
+        let queueIndex = 0;
+        const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, batch.length) }, () =>
+          (async () => {
+            while (queueIndex < batch.length) {
+              const nextIndex = queueIndex;
+              queueIndex += 1;
+              const photo = batch[nextIndex];
+              const target = uploadMap.get(photo.id);
+
+              if (!target) {
+                throw new Error("Una o piu immagini non hanno ricevuto un URL di upload valido.");
+              }
+
+              setUploadProgress((current) => ({
+                ...current,
+                stage: "uploading",
+              }));
+
+              const { error: uploadError } = await supabase.storage
+                .from("photos")
+                .uploadToSignedUrl(target.storagePath, target.token, photo.file, {
+                  contentType: photo.file.type || "application/octet-stream",
+                  upsert: false,
+                });
+
+              if (uploadError) {
+                throw new Error(
+                  `Caricamento immagini non riuscito per ordine ${batchIndex + 1}. Riprova tra un attimo.`
+                );
+              }
+
+              uploadedFiles += 1;
+              setUploadProgress((current) => ({
+                ...current,
+                uploadedFiles,
+              }));
+            }
+          })()
+        );
+
+        await Promise.all(workers);
+
+        setUploadProgress((current) => ({
+          ...current,
+          stage: "creating-order",
+          currentBatch: batchIndex + 1,
+        }));
+
+        const response = await fetch("/api/public/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photographerId: photographer.id,
+            idempotencyKey:
+              photoBatches.length === 1
+                ? idempotencyKeyRef.current
+                : `${idempotencyKeyRef.current}-part-${batchIndex + 1}`,
+            customerEmail: customerEmail.trim(),
+            customerFirstName: customerFirstName.trim(),
+            customerLastName: customerLastName.trim(),
+            customerPhone: customerPhone.trim(),
+            privacyAccepted,
+            privacyVersion: LEGAL_DOCUMENT_VERSION,
+            couponCode: batchIndex === 0 ? appliedCouponCode || undefined : undefined,
+            manifest: batch.map((photo) => ({
+              clientId: photo.id,
+              formatId: photo.formatId,
+              quantity: photo.quantity,
+              originalFilename: photo.file.name,
+              storagePath: uploadMap.get(photo.id)?.storagePath,
+            })),
+          }),
+        });
+
+        const payload = await parseApiPayload<OrderPayload>(response);
+        if (!response.ok) {
+          throw new Error(payload.error || `Preparazione ordine ${batchIndex + 1} non riuscita.`);
+        }
+
+        createdOrders.push({
+          orderId: payload.orderId || `Ordine ${batchIndex + 1}`,
+          checkoutUrl: payload.checkoutUrl,
+        });
+      }
+
+      setSuccessOrders(createdOrders);
+      setSuccessMessage(
+        photoBatches.length > 1
+          ? `Hai inviato ${photos.length} immagini in ${photoBatches.length} ordini separati (max ${MAX_PHOTOS_PER_ORDER} foto per ordine).`
+          : "Il tuo ordine e stato registrato correttamente."
+      );
+
+      if (createdOrders.length === 1 && createdOrders[0].checkoutUrl) {
+        window.location.href = createdOrders[0].checkoutUrl;
+        return;
+      }
+
       setStep("success");
     } catch (error) {
       setErrorMessage(
@@ -716,6 +1133,13 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
       );
     } finally {
       setLoading(false);
+      setUploadProgress({
+        stage: "idle",
+        uploadedFiles: 0,
+        totalFiles: 0,
+        currentBatch: 0,
+        totalBatches: 0,
+      });
     }
   };
 
@@ -731,14 +1155,43 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             Il tuo ordine e stato registrato correttamente.
           </h2>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            Lo studio ricevera immagini, formati e riepilogo economico. Ti contattera quando le
-            stampe saranno pronte.
+            {successMessage ||
+              "Lo studio ricevera immagini, formati e riepilogo economico. Ti contattera quando le stampe saranno pronte."}
           </p>
           <div className="mt-8 grid gap-4 rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--muted)]/55 p-5 text-left md:grid-cols-3">
             <SummaryStat label="Foto inviate" value={String(photos.length)} />
-            <SummaryStat label="Totale ordine" value={formatCurrency(totalCents)} />
-            <SummaryStat label="Riferimento" value={successOrderId || "Ordine creato"} />
+            <SummaryStat label="Totale ordine" value={formatCurrency(discountedTotalCents)} />
+            <SummaryStat
+              label={successOrders.length > 1 ? "Ordini creati" : "Riferimento"}
+              value={successOrders.length > 1 ? String(successOrders.length) : successOrders[0]?.orderId || "Ordine creato"}
+            />
           </div>
+          {successOrders.length > 0 && (
+            <div className="mt-5 rounded-[1.5rem] border border-[color:var(--border)] bg-white p-5 text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Riferimenti ordine
+              </p>
+              <div className="mt-3 space-y-2 text-sm text-foreground">
+                {successOrders.map((order, index) => (
+                  <div key={`${order.orderId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] px-3 py-2">
+                    <span>
+                      Ordine {index + 1}: <strong>{order.orderId}</strong>
+                    </span>
+                    {order.checkoutUrl && (
+                      <a
+                        href={order.checkoutUrl}
+                        className="font-semibold text-primary hover:underline"
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Completa pagamento
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
     );
@@ -746,7 +1199,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
 
   return (
     <section className="space-y-5 pb-6 md:pb-8">
-      <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] md:sticky md:top-4 md:z-20 md:backdrop-blur-lg md:px-6">
+      <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white/95 px-4 py-4 shadow-[var(--shadow-sm)] md:px-6">
         <div className="flex items-center justify-between md:hidden">
           <div className="flex-1">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-primary">
@@ -772,6 +1225,15 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
           <StepDot number={5} title="Conferma" active={false} complete={false} isLast />
         </div>
       </div>
+
+      <LivePricingRibbon
+        totalCents={discountedTotalCents}
+        promotionsCount={pricingInsights.activePromotionsCount}
+        totalDiscountCents={pricingInsights.totalDiscountCents}
+        hasCouponPromo={pricingInsights.hasCouponPromo}
+        hasQuantityPromo={pricingInsights.hasQuantityPromo}
+        quantityPromoItems={pricingInsights.quantityPromoItems}
+      />
 
       {step === "customer" ? (
         <Panel
@@ -848,6 +1310,31 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               <div className="absolute -top-4 -right-4 h-16 w-16 rounded-full bg-primary/[0.03]" />
             </div>
 
+            <div className="rounded-[1.3rem] border border-[color:var(--border)] bg-[color:var(--muted)]/30 px-4 py-3 text-sm">
+              <label className="flex items-start gap-3 leading-6 text-foreground">
+                <input
+                  type="checkbox"
+                  checked={privacyAccepted}
+                  onChange={(event) => setPrivacyAccepted(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-[color:var(--border-strong)]"
+                />
+                <span>
+                  Confermo di aver letto la{" "}
+                  <Link href={LEGAL_LINKS.privacyPolicy} className="font-semibold text-primary hover:underline">
+                    Privacy Policy
+                  </Link>{" "}
+                  e i{" "}
+                  <Link href={LEGAL_LINKS.termsOfService} className="font-semibold text-primary hover:underline">
+                    Termini di servizio
+                  </Link>
+                  .
+                </span>
+              </label>
+              <p className="mt-2 pl-7 text-xs text-muted-foreground">
+                Versione informativa: {LEGAL_DOCUMENT_VERSION}
+              </p>
+            </div>
+
             {errorMessage && <ErrorBanner message={errorMessage} />}
 
             <div className="flex justify-end">
@@ -876,21 +1363,40 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               </Button>
             </div>
 
-            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" id="photo-upload" />
-            <label htmlFor="photo-upload" className="group flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-[1.8rem] border-2 border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/35 px-6 py-8 text-center hover:border-primary hover:bg-[color:var(--secondary)]">
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" id="photo-upload" disabled={isPreparingFiles} />
+            <label
+              htmlFor="photo-upload"
+              className={`group flex min-h-[280px] flex-col items-center justify-center rounded-[1.8rem] border-2 border-dashed px-6 py-8 text-center ${
+                isPreparingFiles
+                  ? "cursor-not-allowed border-primary/40 bg-[color:var(--secondary)]/35 opacity-80"
+                  : "cursor-pointer border-[color:var(--border)] bg-[color:var(--muted)]/35 hover:border-primary hover:bg-[color:var(--secondary)]"
+              }`}
+            >
               <div className="mb-4 flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-full bg-primary text-white shadow-[0_18px_44px_rgba(217,121,66,0.18)]">
-                <ImagePlus className="h-8 w-8" />
+                {isPreparingFiles ? <Loader2 className="h-8 w-8 animate-spin" /> : <ImagePlus className="h-8 w-8" />}
               </div>
-              <h4 className="text-[1.85rem] font-semibold tracking-tight">Trascina o seleziona le tue immagini</h4>
+              <h4 className="text-[1.85rem] font-semibold tracking-tight">
+                {isPreparingFiles ? "Sto preparando le immagini..." : "Trascina o seleziona le tue immagini"}
+              </h4>
               <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                Carica piu foto in una sola volta. In questo step vedi solo anteprime e controllo dei file caricati.
+                {isPreparingFiles
+                  ? `Analisi/compressione in corso (${prepareProgress.current}/${prepareProgress.total}).`
+                  : "Carica piu foto in una sola volta. In questo step vedi solo anteprime e controllo dei file caricati."}
               </p>
-              <span className="mt-5 inline-flex items-center rounded-full border border-[color:var(--border)] bg-white px-4 py-2 text-sm font-semibold text-foreground">Scegli file</span>
+              <span className="mt-5 inline-flex items-center rounded-full border border-[color:var(--border)] bg-white px-4 py-2 text-sm font-semibold text-foreground">
+                {isPreparingFiles ? "Caricamento in corso" : "Scegli file"}
+              </span>
             </label>
+
+            {isPreparingFiles && (
+              <InfoBanner
+                message={`Caricamento in corso: sto preparando ${prepareProgress.total} file (${prepareProgress.current}/${prepareProgress.total}). Attendi il completamento.`}
+              />
+            )}
 
             <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-white px-4 py-3 text-sm leading-6 text-muted-foreground">
               Requisiti file: massimo {formatMegabytes(PHOTO_MAX_BYTES)} per immagine, risoluzione minima{" "}
-              {PHOTO_MIN_WIDTH}x{PHOTO_MIN_HEIGHT}px. Le immagini molto pesanti vengono ottimizzate automaticamente.
+              {PHOTO_MIN_WIDTH}x{PHOTO_MIN_HEIGHT}px. Le immagini molto pesanti vengono ottimizzate automaticamente. Ogni ordine accetta massimo {MAX_PHOTOS_PER_ORDER} foto: se ne invii di piu (fino a {MAX_PHOTOS_PER_SUBMISSION}) il sistema crea automaticamente 2 ordini.
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
@@ -900,6 +1406,11 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             </div>
 
             {formats.length === 0 && <div className="rounded-[1.5rem] border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">Lo studio non ha ancora formati attivi: l&apos;ordine non puo essere completato finche il catalogo non viene configurato.</div>}
+            {photos.length > MAX_PHOTOS_PER_ORDER && (
+              <InfoBanner
+                message={`Hai caricato ${photos.length} foto: al checkout verranno creati 2 ordini separati (max ${MAX_PHOTOS_PER_ORDER} foto per ordine).`}
+              />
+            )}
             {photos.length > 0 && <PhotoGrid photos={photos} onRemove={removePhoto} />}
             {uploadInfoMessage && <InfoBanner message={uploadInfoMessage} />}
             {uploadWarningMessage && <WarningBanner message={uploadWarningMessage} />}
@@ -937,7 +1448,10 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             headline="Assegna i formati"
             note="Scegli un formato attivo e tocca le foto per assegnarlo subito. Quando tutte hanno un formato passi alla fase quantita."
           >
-            <div className="space-y-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white/95 p-4 shadow-[var(--shadow-sm)] md:sticky md:top-[5.3rem] md:z-10 md:backdrop-blur">
+            <div
+              className="space-y-4 rounded-[1.7rem] border border-[color:var(--border)] bg-white/95 p-4 shadow-[var(--shadow-sm)] md:sticky md:z-10 md:backdrop-blur"
+              style={{ top: "84px" }}
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
@@ -1001,12 +1515,97 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                       Applica alle non assegnate
                     </Button>
                   </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Filtra foto
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormatFilter("all")}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          formatFilter === "all"
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-[color:var(--border)] bg-[color:var(--muted)]/45 text-foreground hover:bg-[color:var(--muted)]"
+                        }`}
+                      >
+                        Tutte ({photos.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormatFilter("unassigned")}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          formatFilter === "unassigned"
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-[color:var(--border)] bg-[color:var(--muted)]/45 text-foreground hover:bg-[color:var(--muted)]"
+                        }`}
+                      >
+                        Non assegnate ({formatCountMap.get("unassigned") || 0})
+                      </button>
+                      {formats.map((format) => (
+                        <button
+                          key={`filter-${format.id}`}
+                          type="button"
+                          onClick={() => setFormatFilter(format.id)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            formatFilter === format.id
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-[color:var(--border)] bg-[color:var(--muted)]/45 text-foreground hover:bg-[color:var(--muted)]"
+                          }`}
+                        >
+                          {format.name} ({formatCountMap.get(format.id) || 0})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 rounded-[1.2rem] border border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 py-2">
+                    <span className="text-xs font-semibold text-foreground">
+                      Selezionate: {selectedPhotoIds.length}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={selectAllInCurrentView}
+                      disabled={!filteredCartItems.length}
+                    >
+                      Seleziona viste ({filteredCartItems.length})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={clearPhotoSelection}
+                      disabled={selectedPhotoIds.length === 0}
+                    >
+                      Deseleziona tutto
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={applyActiveFormatToSelected}
+                      disabled={!activeFormat || selectedPhotoIds.length === 0}
+                    >
+                      Assegna formato a selezionate
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={clearFormatFromSelected}
+                      disabled={selectedPhotoIds.length === 0}
+                    >
+                      Rimuovi formato da selezionate
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {cartItems.map((item) => (
+              {filteredCartItems.map((item) => (
                 <article key={item.id} className="overflow-hidden rounded-[1.6rem] border border-[color:var(--border)] bg-white">
                   <div
                     className={`relative aspect-[4/3] overflow-hidden ${
@@ -1018,6 +1617,23 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                   >
                     <Image src={item.preview} alt={item.file.name} fill unoptimized className="object-cover" sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw" />
                     <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-2">
+                      {formatPhase === "assign" && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            togglePhotoSelection(item.id);
+                          }}
+                          className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full border px-2 text-xs font-semibold ${
+                            selectedPhotoIds.includes(item.id)
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-white/70 bg-black/65 text-white"
+                          }`}
+                          aria-label={`Seleziona ${item.file.name}`}
+                        >
+                          {selectedPhotoIds.includes(item.id) ? "OK" : "Sel"}
+                        </button>
+                      )}
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                         item.format
                           ? "bg-emerald-100 text-emerald-800"
@@ -1081,6 +1697,10 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               ))}
             </div>
 
+            {formatPhase === "assign" && filteredCartItems.length === 0 && (
+              <InfoBanner message="Nessuna foto corrisponde al filtro selezionato." />
+            )}
+
             {errorMessage && <ErrorBanner message={errorMessage} />}
           </Panel>
 
@@ -1090,7 +1710,8 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                 {assignedFormatsCount} formati assegnati su {photos.length} foto
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Totale aggiornato in tempo reale: {formatCurrency(totalCents)}
+                Totale aggiornato in tempo reale: {formatCurrency(discountedTotalCents)}
+                {formatPhase === "assign" ? ` · ${selectedInCurrentViewCount} selezionate nella vista corrente` : ""}
               </p>
             </div>
             {formatPhase === "assign" ? (
@@ -1140,11 +1761,67 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               </div>
             </div>
 
+            <div className="mt-4 rounded-[1.5rem] border border-[color:var(--border)] bg-white p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Coupon promozionale</p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={couponCodeInput}
+                  onChange={(event) => {
+                    setCouponCodeInput(event.target.value.toUpperCase());
+                    if (couponError) setCouponError("");
+                  }}
+                  placeholder="Es. BENVENUTO10"
+                  disabled={couponValidating || loading}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={applyCouponCode}
+                    disabled={couponValidating || loading || !couponCodeInput.trim()}
+                  >
+                    {couponValidating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Verifica
+                      </>
+                    ) : (
+                      "Applica"
+                    )}
+                  </Button>
+                  {appliedCouponCode && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={clearCouponState}
+                      disabled={couponValidating || loading}
+                    >
+                      Rimuovi
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {appliedCouponCode && (
+                <p className="mt-2 text-sm text-emerald-700">
+                  Coupon attivo: <span className="font-semibold">{appliedCouponCode}</span>
+                </p>
+              )}
+              {couponMessage && <div className="mt-3"><InfoBanner message={couponMessage} /></div>}
+              {couponError && <div className="mt-3"><WarningBanner message={couponError} /></div>}
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <SummaryCard label="Totale ordine" value={formatCurrency(totalCents)} />
+              <SummaryCard label="Totale ordine" value={formatCurrency(discountedTotalCents)} />
               <SummaryCard label="Da pagare ora" value={formatCurrency(paymentPlan.dueNowCents)} />
               <SummaryCard label="Saldo in studio" value={formatCurrency(paymentPlan.remainingCents)} />
             </div>
+
+            {couponDiscountCents > 0 && (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <SummaryCard label="Totale prima sconto" value={formatCurrency(totalCents)} />
+                <SummaryCard label="Sconto coupon" value={`-${formatCurrency(couponDiscountCents)}`} />
+              </div>
+            )}
 
             <div className="mt-4 rounded-[1.5rem] border border-[color:var(--border)] bg-white p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Dati cliente</p>
@@ -1158,6 +1835,18 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             </div>
 
             {paymentBlocked && <div className="mt-4 rounded-[1.5rem] border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">Questo studio richiede il checkout online, ma Stripe non e configurato in questo ambiente. L&apos;admin puo attivarlo oppure usare &quot;Pagamento in studio&quot;.</div>}
+            {loading && uploadProgress.totalFiles > 0 && (
+              <div className="mt-4">
+                <UploadProgressPanel
+                  stageLabel={uploadProgressLabel}
+                  uploadedFiles={uploadProgress.uploadedFiles}
+                  totalFiles={uploadProgress.totalFiles}
+                  percent={uploadProgressPercent}
+                  currentBatch={uploadProgress.currentBatch}
+                  totalBatches={uploadProgress.totalBatches}
+                />
+              </div>
+            )}
             {errorMessage && <div className="mt-4"><ErrorBanner message={errorMessage} /></div>}
 
             <div className="mt-5">
@@ -1165,7 +1854,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Preparazione ordine
+                    {uploadProgressLabel}
                   </>
                 ) : paymentPlan.mode === "online_full" ? (
                   "Vai al pagamento sicuro"
@@ -1197,6 +1886,12 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                   </div>
                 ))}
               </div>
+              {couponDiscountCents > 0 && (
+                <div className="mt-4 rounded-[1.3rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  <p className="font-semibold">Coupon applicato: -{formatCurrency(couponDiscountCents)}</p>
+                  <p className="mt-1">Totale finale: {formatCurrency(discountedTotalCents)}</p>
+                </div>
+              )}
             </div>
           </aside>
         </div>
@@ -1329,6 +2024,94 @@ function StickyActionBar({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-[1.8rem] border border-[color:var(--border)] bg-white px-4 py-4 shadow-[var(--shadow-md)] md:sticky md:bottom-3 md:z-20 md:px-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">{children}</div>
+    </div>
+  );
+}
+
+function LivePricingRibbon({
+  totalCents,
+  promotionsCount,
+  totalDiscountCents,
+  hasCouponPromo,
+  hasQuantityPromo,
+  quantityPromoItems,
+}: {
+  totalCents: number;
+  promotionsCount: number;
+  totalDiscountCents: number;
+  hasCouponPromo: boolean;
+  hasQuantityPromo: boolean;
+  quantityPromoItems: number;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Costo in tempo reale
+          </p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{formatCurrency(totalCents)}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/45 px-3 py-1 text-xs font-semibold text-foreground">
+            Promo attive: {promotionsCount}
+          </span>
+          {totalDiscountCents > 0 && (
+            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Risparmi: -{formatCurrency(totalDiscountCents)}
+            </span>
+          )}
+          {hasCouponPromo && (
+            <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+              Coupon applicato
+            </span>
+          )}
+          {hasQuantityPromo && (
+            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+              Sconto quantita su {quantityPromoItems} foto
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UploadProgressPanel({
+  stageLabel,
+  uploadedFiles,
+  totalFiles,
+  percent,
+  currentBatch,
+  totalBatches,
+}: {
+  stageLabel: string;
+  uploadedFiles: number;
+  totalFiles: number;
+  percent: number;
+  currentBatch: number;
+  totalBatches: number;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-sky-300 bg-sky-50 px-4 py-4 text-sky-900">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
+        <span>{stageLabel}</span>
+        <span>{percent}%</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-sky-100">
+        <div
+          className="h-full rounded-full bg-sky-600 transition-all duration-300"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs font-medium">
+        <span>
+          File caricati: {uploadedFiles}/{totalFiles}
+        </span>
+        <span>
+          Ordine {Math.max(currentBatch, 1)}/{Math.max(totalBatches, 1)}
+        </span>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
+  BadgePercent,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -19,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/orders", label: "Ordini", icon: Package, exact: false },
+  { href: "/admin/coupons", label: "Coupon", icon: BadgePercent, exact: false },
   { href: "/admin/settings", label: "Impostazioni", icon: Settings, exact: false },
 ];
 

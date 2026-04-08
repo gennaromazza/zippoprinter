@@ -206,7 +206,17 @@ export function SubscriptionStatusPanel() {
               {getStatusLabel(status)}
             </span>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (loading) {
+                return;
+              }
+              setOpen(true);
+            }}
+          >
             Apri dettagli
           </Button>
         </div>

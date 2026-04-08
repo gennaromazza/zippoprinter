@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { RecoveryHashRedirect } from "@/components/recovery-hash-redirect";
+import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col app-shell">
         <RecoveryHashRedirect />
         {children}
+        <CookieConsentBanner />
       </body>
     </html>
   );

@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { LEGAL_LINKS } from "@/lib/privacy-consent";
 
 export function MarketingHeader() {
   const [open, setOpen] = useState(false);
@@ -124,10 +125,14 @@ export function MarketingHeader() {
 }
 
 export function MarketingFooter() {
+  const openCookiePreferences = () => {
+    window.dispatchEvent(new Event("zippoprinter:open-cookie-preferences"));
+  };
+
   return (
     <footer className="border-t border-white/60 bg-[rgba(250,248,245,0.6)]">
       <div className="mx-auto max-w-6xl px-4 py-12 md:px-8">
-        <div className="grid gap-8 md:grid-cols-3">
+        <div className="grid gap-8 md:grid-cols-4">
           <div>
             <div className="flex items-center gap-2.5">
               <Image src="/logo.png" alt="ZippoPrinter" width={36} height={36} className="h-9 w-9" />
@@ -175,6 +180,38 @@ export function MarketingFooter() {
                 <Link href="/signup?force=1" className="text-sm text-foreground hover:text-primary">
                   Registrati gratis
                 </Link>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Legale
+            </h3>
+            <ul className="mt-4 space-y-2.5">
+              <li>
+                <Link href={LEGAL_LINKS.privacyPolicy} className="text-sm text-foreground hover:text-primary">
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link href={LEGAL_LINKS.cookiePolicy} className="text-sm text-foreground hover:text-primary">
+                  Cookie Policy
+                </Link>
+              </li>
+              <li>
+                <Link href={LEGAL_LINKS.termsOfService} className="text-sm text-foreground hover:text-primary">
+                  Termini di servizio
+                </Link>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={openCookiePreferences}
+                  className="text-sm text-foreground hover:text-primary"
+                >
+                  Preferenze cookie
+                </button>
               </li>
             </ul>
           </div>

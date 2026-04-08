@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { registerCouponRedemption, validateCoupon, type CouponRecord } from "@/lib/coupons";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutAmounts, getPhotographerPaymentMode, prefersOnlinePayment, requiresOnlinePayment } from "@/lib/payments";
 import { getUnitPriceForQuantity } from "@/lib/pricing";
-import { isMissingPaymentSchemaError } from "@/lib/schema-compat";
+import { isMissingCouponSchemaError, isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getConnectedStripeClientForTenant, getStripeClient } from "@/lib/stripe";
 import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
 import { normalizeFilename } from "@/lib/uploads";
@@ -20,13 +21,20 @@ interface ManifestItem {
   storagePath?: string;
 }
 
+interface CouponValidationResponse {
+  valid: boolean;
+  coupon?: CouponRecord;
+  discountCents: number;
+  message: string;
+}
+
 interface CustomerProfileRecord {
   id: string;
 }
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
-const MAX_MANIFEST_ITEMS = 50;
+const MAX_MANIFEST_ITEMS = 300;
 const MAX_FILENAME_LENGTH = 120;
 const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
 const MIN_PHONE_LENGTH = 6;
@@ -96,7 +104,9 @@ export async function POST(request: Request) {
     let customerFirstName = "";
     let customerLastName = "";
     let customerPhone = "";
+    let privacyAccepted = false;
     let idempotencyKey = "";
+    let couponCode = "";
     let manifestInput = "[]";
     let formData: FormData | null = null;
 
@@ -107,7 +117,9 @@ export async function POST(request: Request) {
       customerFirstName = String(formData.get("customerFirstName") || "").trim();
       customerLastName = String(formData.get("customerLastName") || "").trim();
       customerPhone = String(formData.get("customerPhone") || "").trim();
+      privacyAccepted = String(formData.get("privacyAccepted") || "").toLowerCase() === "true";
       idempotencyKey = String(formData.get("idempotencyKey") || "").trim();
+      couponCode = String(formData.get("couponCode") || "").trim();
       manifestInput = String(formData.get("manifest") || "[]");
     } else {
       const body = (await request.json()) as {
@@ -116,7 +128,9 @@ export async function POST(request: Request) {
         customerFirstName?: string;
         customerLastName?: string;
         customerPhone?: string;
+        privacyAccepted?: boolean;
         idempotencyKey?: string;
+        couponCode?: string;
         manifest?: ManifestItem[];
       };
 
@@ -125,7 +139,9 @@ export async function POST(request: Request) {
       customerFirstName = String(body.customerFirstName || "").trim();
       customerLastName = String(body.customerLastName || "").trim();
       customerPhone = String(body.customerPhone || "").trim();
+      privacyAccepted = Boolean(body.privacyAccepted);
       idempotencyKey = String(body.idempotencyKey || "").trim();
+      couponCode = String(body.couponCode || "").trim();
       manifestInput = JSON.stringify(body.manifest || []);
     }
 
@@ -154,7 +170,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Indirizzo email non valido." }, { status: 400 });
     }
     if (manifest.length > MAX_MANIFEST_ITEMS) {
-      return NextResponse.json({ error: "Troppe immagini in un solo ordine." }, { status: 400 });
+      return NextResponse.json(
+        { error: `Puoi inviare massimo ${MAX_MANIFEST_ITEMS} immagini per ordine.` },
+        { status: 400 }
+      );
+    }
+    if (!privacyAccepted) {
+      return NextResponse.json(
+        {
+          error: "Devi confermare la privacy policy prima di inviare l'ordine.",
+        },
+        { status: 400 }
+      );
     }
 
     const seenClientIds = new Set<string>();
@@ -235,6 +262,31 @@ export async function POST(request: Request) {
       throw new Error("Totale ordine non valido.");
     }
     const paymentMode = getPhotographerPaymentMode(photographer);
+    let appliedCoupon: CouponRecord | null = null;
+    let couponDiscountCents = 0;
+    if (couponCode) {
+      const couponValidation = (await validateCoupon({
+        admin,
+        photographerId,
+        couponCode,
+        orderTotalCents: totalCents,
+        customerEmail,
+        paymentMode,
+      })) as CouponValidationResponse;
+
+      if (!couponValidation.valid || !couponValidation.coupon) {
+        throw new Error(couponValidation.message || "Coupon non valido.");
+      }
+
+      appliedCoupon = couponValidation.coupon;
+      couponDiscountCents = Math.max(0, couponValidation.discountCents || 0);
+    }
+
+    const finalTotalCents = Math.max(totalCents - couponDiscountCents, 0);
+    if (finalTotalCents <= 0) {
+      throw new Error("Totale ordine non valido dopo applicazione coupon.");
+    }
+
     const billingContext = await getTenantBillingContext(photographerId);
     const connectClient = getConnectedStripeClientForTenant(
       billingContext.billingAccount || { stripe_connect_account_id: null, connect_status: "not_connected" }
@@ -248,7 +300,7 @@ export async function POST(request: Request) {
       (billingContext.billingAccount?.legacy_checkout_enabled ?? true);
     const billingMode = connectReady ? "connect" : legacyFallbackEnabled ? "legacy_fallback" : "disabled";
     const stripeAvailable = connectReady || legacyFallbackEnabled;
-    const paymentPlan = getCheckoutAmounts(totalCents, photographer, { stripeAvailable });
+    const paymentPlan = getCheckoutAmounts(finalTotalCents, photographer, { stripeAvailable });
 
     if (requiresOnlinePayment(paymentMode) && paymentPlan.dueNowCents <= 0) {
       throw new Error("Configurazione pagamento non valida: importo online uguale a zero.");
@@ -333,7 +385,24 @@ export async function POST(request: Request) {
       customer_last_name: customerLastName || null,
       customer_phone: customerPhone || null,
       status: "pending",
-      total_cents: totalCents,
+      total_cents: finalTotalCents,
+      total_before_discount_cents: totalCents,
+      coupon_id: appliedCoupon?.id || null,
+      coupon_code: appliedCoupon?.code || null,
+      coupon_discount_cents: couponDiscountCents,
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+    };
+
+    const baseOrderPayloadWithoutCoupons = {
+      photographer_id: photographerId,
+      customer_id: customerId,
+      customer_email: customerEmail,
+      customer_name: customerName || null,
+      customer_first_name: customerFirstName || null,
+      customer_last_name: customerLastName || null,
+      customer_phone: customerPhone || null,
+      status: "pending",
+      total_cents: finalTotalCents,
       ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
     };
 
@@ -344,7 +413,7 @@ export async function POST(request: Request) {
         payment_status: paymentMode === "pay_in_store" ? "not_required" : "unpaid",
         payment_mode_snapshot: paymentMode,
         amount_paid_cents: 0,
-        amount_due_cents: totalCents,
+        amount_due_cents: finalTotalCents,
       })
       .select("id")
       .single();
@@ -353,6 +422,24 @@ export async function POST(request: Request) {
       createOrderResponse = await admin
         .from("orders")
         .insert(baseOrderPayload)
+        .select("id")
+        .single();
+    }
+
+    if (createOrderResponse.error && isMissingCouponSchemaError(createOrderResponse.error.message)) {
+      if (couponDiscountCents > 0) {
+        throw new Error("Schema coupon non aggiornato. Esegui la migration 019_coupons_v1.sql.");
+      }
+
+      createOrderResponse = await admin
+        .from("orders")
+        .insert({
+          ...baseOrderPayloadWithoutCoupons,
+          payment_status: paymentMode === "pay_in_store" ? "not_required" : "unpaid",
+          payment_mode_snapshot: paymentMode,
+          amount_paid_cents: 0,
+          amount_due_cents: finalTotalCents,
+        })
         .select("id")
         .single();
     }
@@ -430,6 +517,17 @@ export async function POST(request: Request) {
     }
 
     if (!requiresOnlinePayment(paymentMode) && !prefersOnlinePayment(paymentMode)) {
+      if (appliedCoupon && couponDiscountCents > 0) {
+        await registerCouponRedemption({
+          admin,
+          coupon: appliedCoupon,
+          orderId: createdOrder.id,
+          photographerId,
+          customerEmail,
+          discountAppliedCents: couponDiscountCents,
+        });
+      }
+
       return NextResponse.json({
         mode: paymentMode,
         orderId: createdOrder.id,
@@ -447,6 +545,17 @@ export async function POST(request: Request) {
 
     // deposit_plus_studio without Stripe: fall back to in-store deposit collection
     if (prefersOnlinePayment(paymentMode) && !connectReady && !legacyFallbackEnabled) {
+      if (appliedCoupon && couponDiscountCents > 0) {
+        await registerCouponRedemption({
+          admin,
+          coupon: appliedCoupon,
+          orderId: createdOrder.id,
+          photographerId,
+          customerEmail,
+          discountAppliedCents: couponDiscountCents,
+        });
+      }
+
       return NextResponse.json({
         mode: paymentMode,
         orderId: createdOrder.id,
@@ -481,6 +590,8 @@ export async function POST(request: Request) {
         payment_mode: paymentMode,
         billing_mode: billingMode,
         connected_account_id: billingContext.billingAccount?.stripe_connect_account_id || "",
+        coupon_code: appliedCoupon?.code || "",
+        coupon_discount_cents: String(couponDiscountCents),
       },
       payment_intent_data: {
         metadata: {
@@ -489,6 +600,8 @@ export async function POST(request: Request) {
           payment_mode: paymentMode,
           billing_mode: billingMode,
           connected_account_id: billingContext.billingAccount?.stripe_connect_account_id || "",
+          coupon_code: appliedCoupon?.code || "",
+          coupon_discount_cents: String(couponDiscountCents),
         },
       },
       line_items: [
@@ -521,6 +634,17 @@ export async function POST(request: Request) {
 
     if (checkoutError && !isMissingPaymentSchemaError(checkoutError.message)) {
       throw new Error("Sessione di pagamento creata ma non salvata correttamente.");
+    }
+
+    if (appliedCoupon && couponDiscountCents > 0) {
+      await registerCouponRedemption({
+        admin,
+        coupon: appliedCoupon,
+        orderId: createdOrder.id,
+        photographerId,
+        customerEmail,
+        discountAppliedCents: couponDiscountCents,
+      });
     }
 
     return NextResponse.json({

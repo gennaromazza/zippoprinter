@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Loader2, ArrowRight, Sparkles, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { LEGAL_DOCUMENT_VERSION, LEGAL_LINKS } from "@/lib/privacy-consent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,41 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
+async function recordSignupLegalAcknowledgement(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return;
+  }
+
+  const basePayload = {
+    source: "signup",
+    consentGranted: true,
+    consentVersion: LEGAL_DOCUMENT_VERSION,
+    decision: "acknowledged",
+    subjectType: "studio_user",
+    subjectIdentifier: normalizedEmail,
+  };
+
+  await Promise.allSettled([
+    fetch("/api/public/privacy-consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...basePayload,
+        consentKey: "privacy_notice",
+      }),
+    }),
+    fetch("/api/public/privacy-consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...basePayload,
+        consentKey: "terms_of_service",
+      }),
+    }),
+  ]);
+}
 
 export default function SignupPage() {
   const [studioName, setStudioName] = useState("");
@@ -42,6 +78,7 @@ export default function SignupPage() {
     }
 
     setLoading(true);
+    void recordSignupLegalAcknowledgement(email);
 
     try {
       const { data, error: authError } = await supabase.auth.signUp({
@@ -215,8 +252,15 @@ export default function SignupPage() {
                 )}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Registrandoti accetti i termini di servizio e la privacy policy
-                della piattaforma.
+                Registrandoti accetti i{" "}
+                <Link href={LEGAL_LINKS.termsOfService} className="font-semibold text-primary hover:underline">
+                  termini di servizio
+                </Link>{" "}
+                e dichiari di aver letto la{" "}
+                <Link href={LEGAL_LINKS.privacyPolicy} className="font-semibold text-primary hover:underline">
+                  privacy policy
+                </Link>
+                .
               </p>
             </form>
           </CardContent>

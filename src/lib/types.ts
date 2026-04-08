@@ -199,6 +199,10 @@ export interface Order {
   total_cents: number;
   payment_status: OrderPaymentStatus;
   payment_mode_snapshot?: PaymentMode | null;
+  coupon_id?: string | null;
+  coupon_code?: string | null;
+  coupon_discount_cents?: number;
+  total_before_discount_cents?: number | null;
   amount_paid_cents: number;
   amount_due_cents: number;
   stripe_payment_intent_id?: string | null;

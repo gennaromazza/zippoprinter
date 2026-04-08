@@ -11,7 +11,7 @@ interface UploadRequestItem {
   originalFilename: string;
 }
 
-const MAX_UPLOAD_FILES = 50;
+const MAX_UPLOAD_FILES = 300;
 const MAX_FILENAME_LENGTH = 120;
 
 function isSafeClientId(value: string) {
@@ -37,7 +37,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Dati upload incompleti." }, { status: 400 });
     }
     if (files.length > MAX_UPLOAD_FILES) {
-      return NextResponse.json({ error: "Troppe immagini in un solo upload." }, { status: 400 });
+      return NextResponse.json(
+        { error: `Puoi caricare massimo ${MAX_UPLOAD_FILES} immagini per ordine.` },
+        { status: 400 }
+      );
     }
 
     for (const file of files) {

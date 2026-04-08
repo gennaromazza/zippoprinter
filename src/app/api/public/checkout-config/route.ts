@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LEGAL_DOCUMENT_VERSION, LEGAL_LINKS } from "@/lib/privacy-consent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getConnectedStripeClientForTenant } from "@/lib/stripe";
 import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
@@ -48,5 +49,9 @@ export async function GET(request: Request) {
     depositValue: photographer.deposit_value ?? null,
     updatedAt: photographer.updated_at || null,
     stripeEnabled: connectReady || legacyFallbackEnabled,
+    legalVersion: LEGAL_DOCUMENT_VERSION,
+    privacyPolicyUrl: LEGAL_LINKS.privacyPolicy,
+    cookiePolicyUrl: LEGAL_LINKS.cookiePolicy,
+    termsOfServiceUrl: LEGAL_LINKS.termsOfService,
   });
 }

@@ -57,12 +57,38 @@
 
 ## Public Checkout
 
+- `GET /api/public/checkout-config?photographerId=...`
+  - returns live checkout settings plus legal references.
+  - response includes:
+    - `paymentMode`
+    - `depositType`
+    - `depositValue`
+    - `stripeEnabled`
+    - `legalVersion`
+    - `privacyPolicyUrl`
+    - `cookiePolicyUrl`
+    - `termsOfServiceUrl`
+
 - `POST /api/public/orders`
+  - body must include `privacyAccepted: true`.
   - response now includes:
     - `connectReady`
     - `billingMode`
     - `fallbackUsed`
     - `capabilities`
+
+- `POST /api/public/privacy-consent`
+  - tracks consent/acknowledgement events (cookie preferences, privacy notice, terms acknowledgement).
+  - body:
+    - `source`
+    - `consentKey`
+    - `consentGranted`
+    - `decision` (optional)
+    - `consentVersion`
+    - `subjectType`
+    - `subjectIdentifier` (optional)
+    - `tenantId` (optional)
+    - `metadata` (optional)
 
 ## Webhooks
 

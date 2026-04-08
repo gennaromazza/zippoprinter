@@ -59,3 +59,26 @@ export function isMissingSaasFoundationSchemaError(message: string | undefined |
     message.includes("stripe_connected_account_id")
   );
 }
+
+export function isMissingPrivacySchemaError(message: string | undefined | null) {
+  if (!message) {
+    return false;
+  }
+
+  return message.includes("privacy_consents");
+}
+
+export function isMissingCouponSchemaError(message: string | undefined | null) {
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("coupons") ||
+    message.includes("coupon_redemptions") ||
+    message.includes("coupon_id") ||
+    message.includes("coupon_code") ||
+    message.includes("coupon_discount_cents") ||
+    message.includes("total_before_discount_cents")
+  );
+}
