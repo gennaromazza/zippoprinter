@@ -16,8 +16,9 @@ import { getOrderPaymentHeadline } from "@/lib/payments";
 import type { Order, OrderItem, Photographer } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { OrderExportPanel } from "./order-export-panel";
-import { deleteOrderPhotos, recordOrderDeposit, recordOrderPayment, updateOrderStatus } from "./actions";
+import { deleteOrder, deleteOrderPhotos, recordOrderDeposit, recordOrderPayment, updateOrderStatus } from "./actions";
 
 interface OrderItemWithUrl extends OrderItem {
   signedUrl?: string;
@@ -179,6 +180,24 @@ export default async function OrderDetailPage({
                 {itemsWithUrls.length > 0 && (
                   <form action={deleteOrderPhotos.bind(null, order.id, itemsWithUrls.map((item) => item.storage_path))}><Button variant="destructive" className="w-full"><Trash2 className="h-4 w-4" />Elimina foto archiviate</Button></form>
                 )}
+                <form action={deleteOrder.bind(null, order.id)} className="space-y-2 md:col-span-2 xl:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-rose-700">
+                    Per eliminare l&apos;ordine digita ELIMINA
+                  </p>
+                  <Input
+                    name="deleteConfirmation"
+                    placeholder="ELIMINA"
+                    autoComplete="off"
+                    required
+                    pattern="ELIMINA"
+                    title="Digita esattamente ELIMINA"
+                    className="bg-white"
+                  />
+                  <Button variant="destructive" className="w-full" type="submit">
+                    <Trash2 className="h-4 w-4" />
+                    Elimina ordine
+                  </Button>
+                </form>
               </CardContent>
               {(order.status === "pending" || order.status === "paid") && !canStartPrinting && (
                 <CardContent className="pt-0">

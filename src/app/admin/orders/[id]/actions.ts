@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
 import { getDepositAmountCents } from "@/lib/payments";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { isSameOriginRequest } from "@/lib/request-security";
 
 const VALID_ORDER_STATUSES = new Set([
@@ -189,6 +190,59 @@ export async function deleteOrderPhotos(orderId: string, storagePaths: string[])
     .eq("id", orderId);
 
   revalidateOrderViews(orderId);
+}
+
+export async function deleteOrder(orderId: string, formData: FormData) {
+  if (!(await isSameOriginRequest())) {
+    return;
+  }
+
+  const confirmationToken = String(formData.get("deleteConfirmation") || "")
+    .trim()
+    .toUpperCase();
+  if (confirmationToken !== "ELIMINA") {
+    return;
+  }
+
+  const photographer = await getAuthenticatedPhotographer();
+  if (!photographer || !(await verifyOrderOwnership(orderId, photographer.id))) {
+    return;
+  }
+
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+
+  const { data: orderItems } = await supabase
+    .from("order_items")
+    .select("storage_path")
+    .eq("order_id", orderId);
+
+  const safePrefix = `${photographer.id}/`;
+  const safePaths = (orderItems || [])
+    .map((item) => item.storage_path)
+    .filter((path) => path.startsWith(safePrefix) && !path.includes(".."));
+
+  if (safePaths.length > 0) {
+    const { error: storageError } = await adminClient.storage
+      .from("photos")
+      .remove(safePaths);
+
+    if (storageError) {
+      console.error("Error deleting order photos from storage:", storageError);
+    }
+  }
+
+  await supabase.from("order_items").delete().eq("order_id", orderId);
+  await supabase
+    .from("orders")
+    .delete()
+    .eq("id", orderId)
+    .eq("photographer_id", photographer.id);
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  redirect("/admin/orders");
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentPhotographerForUser } from "@/lib/photographers";
-import { buildOrderExportEntries } from "@/lib/order-exports";
+import { buildOrderExportEntries, sanitizePathSegment } from "@/lib/order-exports";
 import { createClient } from "@/lib/supabase/server";
 import type { OrderItem, Photographer } from "@/lib/types";
 
@@ -132,7 +132,7 @@ export async function GET(
   const admin = createAdminClient();
   const { data: orderData } = await admin
     .from("orders")
-    .select("id, photographer_id")
+    .select("id, photographer_id, customer_first_name, customer_last_name, customer_name, customer_phone")
     .eq("id", id)
     .eq("photographer_id", photographer.id)
     .maybeSingle();
@@ -153,8 +153,17 @@ export async function GET(
   }
 
   const entries = buildOrderExportEntries(id, orderItems);
-  const zipName = `ORD-${id}.zip`;
-  const rootFolder = `ORD-${id}`;
+  const customerFirstName = sanitizePathSegment(String(orderData.customer_first_name || ""));
+  const customerLastName = sanitizePathSegment(String(orderData.customer_last_name || ""));
+  const customerFallbackName = sanitizePathSegment(String(orderData.customer_name || ""));
+  const customerPhone = sanitizePathSegment(String(orderData.customer_phone || "").replace(/\D/g, ""));
+  const customerLabel =
+    `${customerFirstName}${customerLastName}` || customerFallbackName || "Cliente";
+  const phoneLabel = customerPhone || "NoTel";
+  const orderLabel = `Ordine-${sanitizePathSegment(id)}`;
+  const zipBaseName = `${customerLabel}-${phoneLabel}-${orderLabel}`;
+  const zipName = `${zipBaseName}.zip`;
+  const rootFolder = zipBaseName;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
