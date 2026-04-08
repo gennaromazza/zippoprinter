@@ -578,6 +578,10 @@ export default function OnboardingPage() {
               </Link>
             </div>
 
+            <p className="mx-auto mt-3 max-w-md rounded-xl border border-[color:var(--border)] bg-white/75 px-4 py-3 text-sm text-foreground">
+              Suggerimento: dopo il primo accesso al pannello, salva l&apos;URL <strong>/admin</strong> nei preferiti per averlo sempre a portata di mano.
+            </p>
+
             <div className="mx-auto mt-10 max-w-md space-y-3 text-left">
               <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Prossimi passi consigliati

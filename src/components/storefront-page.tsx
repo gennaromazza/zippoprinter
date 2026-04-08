@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AtSign, Globe, MessageCircle, Sparkles } from "lucide-react";
 import { StorefrontUploadShell } from "@/components/storefront-upload-shell";
@@ -189,6 +190,20 @@ export function StorefrontPage({ photographer, formats, stripeEnabled }: Storefr
                   Lo studio non ha ancora pubblicato i contatti.
                 </p>
               )}
+            </div>
+            <div className={`rounded-[1.4rem] border border-[color:var(--border)] bg-white px-4 py-3 ${getCtaAlignClass(theme.ctaAlign)}`}>
+              <p className="text-sm font-semibold text-foreground">Sei il fotografo?</p>
+              <div className={`mt-3 flex flex-wrap items-center gap-2 ${theme.ctaAlign === "center" ? "justify-center" : theme.ctaAlign === "right" ? "justify-end" : ""}`}>
+                <Link
+                  href="/admin"
+                  className="inline-flex items-center rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-foreground hover:bg-[color:var(--muted)]"
+                >
+                  Accedi al pannello admin
+                </Link>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Dopo l&apos;accesso salva <strong>/admin</strong> nei preferiti del browser.
+              </p>
             </div>
             <p className={`section-kicker ${theme.ctaAlign === "center" ? "justify-center" : theme.ctaAlign === "right" ? "justify-end" : ""}`}>
               Percorso guidato: dati cliente, caricamento foto, formati, checkout.
