@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront-page";
-import { getStorefrontByPhotographerId } from "@/lib/photographers";
+import { getCurrentPhotographerForUser, getStorefrontByPhotographerId } from "@/lib/photographers";
 import { getConnectedStripeClientForTenant } from "@/lib/stripe";
 import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +31,22 @@ export default async function StudioPage({
     process.env.ENABLE_LEGACY_STRIPE_FALLBACK === "true" &&
     (billingContext.billingAccount?.legacy_checkout_enabled ?? true);
 
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const currentPhotographer = user
+    ? await getCurrentPhotographerForUser(user)
+    : null;
+  const showAdminCta = currentPhotographer?.id === photographerId;
+
   return (
     <main className="min-h-screen px-4 pb-12 pt-4 md:px-8 md:pb-16 md:pt-6">
       <StorefrontPage
         photographer={storefront.photographer}
         formats={storefront.formats}
         stripeEnabled={connectReady || legacyFallback}
+        showAdminCta={showAdminCta}
       />
     </main>
   );
