@@ -538,7 +538,8 @@ export function PrintFormatsManager({
                       </select>
                       <Input
                         type="number"
-                        min={0.01}
+                        min={rule.mode === "percent" ? 0.1 : 0.01}
+                        max={rule.mode === "percent" ? 99.9 : undefined}
                         step={rule.mode === "percent" ? 0.1 : 0.01}
                         value={rule.value}
                         onChange={(event) =>

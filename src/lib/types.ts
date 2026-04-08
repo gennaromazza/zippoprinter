@@ -1,6 +1,8 @@
 export interface QuantityPriceTier {
   min_quantity: number;
   unit_price_cents: number;
+  discount_mode?: "fixed" | "percent";
+  discount_value?: number;
 }
 
 export type StorefrontLayoutPreset =

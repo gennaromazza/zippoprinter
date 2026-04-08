@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/orders";
 import { getCheckoutAmounts, getPaymentModeLabel } from "@/lib/payments";
-import { getUnitPriceForQuantity } from "@/lib/pricing";
+import { computeFormatQuantityTotals, getUnitPriceForQuantity } from "@/lib/pricing";
 import { LEGAL_DOCUMENT_VERSION, LEGAL_LINKS } from "@/lib/privacy-consent";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import type { DepositType, PaymentMode, Photographer, PrintFormat } from "@/lib/types";
@@ -68,6 +68,8 @@ interface UploadProgressState {
 interface SuccessOrderResult {
   orderId: string;
   checkoutUrl?: string;
+  photoCount: number;
+  copiesCount: number;
 }
 
 interface CouponValidationPayload {
@@ -265,13 +267,16 @@ function StepDot({
 }
 
 function computeTotal(photos: PhotoSelection[], formats: PrintFormat[]) {
+  const formatTotals = computeFormatQuantityTotals(photos);
+
   return photos.reduce((sum, photo) => {
     const format = formats.find((item) => item.id === photo.formatId);
     if (!format) {
       return sum;
     }
 
-    const unitPriceCents = getUnitPriceForQuantity(format, photo.quantity);
+    const aggregateQty = formatTotals.get(photo.formatId) || photo.quantity;
+    const unitPriceCents = getUnitPriceForQuantity(format, aggregateQty);
     return sum + unitPriceCents * photo.quantity;
   }, 0);
 }
@@ -504,6 +509,17 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
     () => photos.filter((photo) => Boolean(photo.formatId)).length,
     [photos]
   );
+  const totalCopiesCount = useMemo(
+    () => photos.reduce((sum, photo) => sum + Math.max(1, Math.round(photo.quantity)), 0),
+    [photos]
+  );
+  const assignedCopiesCount = useMemo(
+    () =>
+      photos
+        .filter((photo) => Boolean(photo.formatId))
+        .reduce((sum, photo) => sum + Math.max(1, Math.round(photo.quantity)), 0),
+    [photos]
+  );
   const allFormatsAssigned = photos.length > 0 && assignedFormatsCount === photos.length;
   const unassignedCount = photos.length - assignedFormatsCount;
   const canMoveToUpload =
@@ -518,9 +534,10 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   const canCheckout = photos.length > 0 && allFormatsAssigned;
   const paymentBlocked = paymentPlan.mode === "online_full" && !effectiveStripeEnabled;
   const pricingInsights = useMemo(() => {
+    const formatTotals = computeFormatQuantityTotals(photos);
     let baseTotalCents = 0;
     let quantityTotalCents = 0;
-    let quantityPromoItems = 0;
+    const discountedFormatIds = new Set<string>();
 
     for (const photo of photos) {
       const format = formats.find((item) => item.id === photo.formatId);
@@ -528,15 +545,16 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
         continue;
       }
 
-      const quantity = Math.min(10, Math.max(1, Math.round(photo.quantity)));
+      const quantity = Math.max(1, Math.round(photo.quantity));
+      const aggregateQty = formatTotals.get(photo.formatId) || quantity;
       const baseUnitPriceCents = format.price_cents;
-      const tierUnitPriceCents = getUnitPriceForQuantity(format, quantity);
+      const tierUnitPriceCents = getUnitPriceForQuantity(format, aggregateQty);
 
       baseTotalCents += baseUnitPriceCents * quantity;
       quantityTotalCents += tierUnitPriceCents * quantity;
 
       if (tierUnitPriceCents < baseUnitPriceCents) {
-        quantityPromoItems += 1;
+        discountedFormatIds.add(photo.formatId);
       }
     }
 
@@ -550,7 +568,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
       activePromotionsCount: (hasCouponPromo ? 1 : 0) + (hasQuantityPromo ? 1 : 0),
       hasCouponPromo,
       hasQuantityPromo,
-      quantityPromoItems,
+      quantityPromoFormats: discountedFormatIds.size,
     };
   }, [appliedCouponCode, couponDiscountCents, formats, photos]);
   const stepOrder: ActiveWizardStep[] = ["customer", "upload", "format", "checkout"];
@@ -611,21 +629,27 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   }, [formatPhase, allFormatsAssigned]);
 
   const cartItems = useMemo(
-    () =>
-      photos.map((photo) => {
+    () => {
+      const formatTotals = computeFormatQuantityTotals(photos);
+      return photos.map((photo) => {
         const format = formats.find((item) => item.id === photo.formatId);
-        const unitPriceCents = format ? getUnitPriceForQuantity(format, photo.quantity) : 0;
+        const aggregateQty = formatTotals.get(photo.formatId) || photo.quantity;
+        const unitPriceCents = format ? getUnitPriceForQuantity(format, aggregateQty) : 0;
         return { ...photo, format, unitPriceCents, subtotal: unitPriceCents * photo.quantity };
-      }),
+      });
+    },
     [photos, formats]
   );
-  const formatCountMap = useMemo(() => {
-    const counts = new Map<string, number>();
+  const formatCounts = useMemo(() => {
+    const photoCounts = new Map<string, number>();
+    const copyCounts = new Map<string, number>();
     for (const photo of photos) {
       const key = photo.formatId || "unassigned";
-      counts.set(key, (counts.get(key) || 0) + 1);
+      const safeQuantity = Math.max(1, Math.round(photo.quantity));
+      photoCounts.set(key, (photoCounts.get(key) || 0) + 1);
+      copyCounts.set(key, (copyCounts.get(key) || 0) + safeQuantity);
     }
-    return counts;
+    return { photoCounts, copyCounts };
   }, [photos]);
   const filteredCartItems = useMemo(() => {
     if (formatFilter === "all") {
@@ -1111,6 +1135,11 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
         createdOrders.push({
           orderId: payload.orderId || `Ordine ${batchIndex + 1}`,
           checkoutUrl: payload.checkoutUrl,
+          photoCount: batch.length,
+          copiesCount: batch.reduce(
+            (sum, photo) => sum + Math.max(1, Math.round(photo.quantity)),
+            0
+          ),
         });
       }
 
@@ -1144,6 +1173,11 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
   };
 
   if (step === "success") {
+    const sentPhotosCount =
+      successOrders.reduce((sum, order) => sum + (order.photoCount || 0), 0) || photos.length;
+    const sentCopiesCount =
+      successOrders.reduce((sum, order) => sum + (order.copiesCount || 0), 0) || totalCopiesCount;
+
     return (
       <section className="rounded-[2rem] border border-[color:var(--border)] bg-white p-8 shadow-[var(--shadow-sm)] md:p-10">
         <div className="mx-auto max-w-3xl text-center">
@@ -1158,8 +1192,9 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
             {successMessage ||
               "Lo studio ricevera immagini, formati e riepilogo economico. Ti contattera quando le stampe saranno pronte."}
           </p>
-          <div className="mt-8 grid gap-4 rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--muted)]/55 p-5 text-left md:grid-cols-3">
-            <SummaryStat label="Foto inviate" value={String(photos.length)} />
+          <div className="mt-8 grid gap-4 rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--muted)]/55 p-5 text-left md:grid-cols-4">
+            <SummaryStat label="Foto inviate" value={String(sentPhotosCount)} />
+            <SummaryStat label="Copie inviate" value={String(sentCopiesCount)} />
             <SummaryStat label="Totale ordine" value={formatCurrency(discountedTotalCents)} />
             <SummaryStat
               label={successOrders.length > 1 ? "Ordini creati" : "Riferimento"}
@@ -1175,7 +1210,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                 {successOrders.map((order, index) => (
                   <div key={`${order.orderId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] px-3 py-2">
                     <span>
-                      Ordine {index + 1}: <strong>{order.orderId}</strong>
+                      Ordine {index + 1}: <strong>{order.orderId}</strong> · {order.photoCount} foto · {order.copiesCount} copie
                     </span>
                     {order.checkoutUrl && (
                       <a
@@ -1232,7 +1267,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
         totalDiscountCents={pricingInsights.totalDiscountCents}
         hasCouponPromo={pricingInsights.hasCouponPromo}
         hasQuantityPromo={pricingInsights.hasQuantityPromo}
-        quantityPromoItems={pricingInsights.quantityPromoItems}
+        quantityPromoFormats={pricingInsights.quantityPromoFormats}
       />
 
       {step === "customer" ? (
@@ -1455,12 +1490,12 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
-                    {assignedFormatsCount} / {photos.length} foto con formato
+                    Foto con formato: {assignedFormatsCount} / {photos.length}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {formatPhase === "assign"
                       ? `Mancano ${unassignedCount} foto da assegnare.`
-                      : "Tutte le foto hanno un formato. Ora regola le quantita."}
+                      : `Tutte le foto hanno un formato. Copie totali: ${assignedCopiesCount}.`}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1541,7 +1576,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                             : "border-[color:var(--border)] bg-[color:var(--muted)]/45 text-foreground hover:bg-[color:var(--muted)]"
                         }`}
                       >
-                        Non assegnate ({formatCountMap.get("unassigned") || 0})
+                        Non assegnate ({formatCounts.photoCounts.get("unassigned") || 0} foto)
                       </button>
                       {formats.map((format) => (
                         <button
@@ -1554,7 +1589,7 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
                               : "border-[color:var(--border)] bg-[color:var(--muted)]/45 text-foreground hover:bg-[color:var(--muted)]"
                           }`}
                         >
-                          {format.name} ({formatCountMap.get(format.id) || 0})
+                          {format.name} ({formatCounts.photoCounts.get(format.id) || 0} foto · {formatCounts.copyCounts.get(format.id) || 0} copie)
                         </button>
                       ))}
                     </div>
@@ -1707,10 +1742,10 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
           <StickyActionBar>
             <div>
               <p className="text-sm font-semibold text-foreground">
-                {assignedFormatsCount} formati assegnati su {photos.length} foto
+                {assignedFormatsCount} foto con formato su {photos.length} foto
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Totale aggiornato in tempo reale: {formatCurrency(discountedTotalCents)}
+                Totale aggiornato in tempo reale: {formatCurrency(discountedTotalCents)} · Copie totali: {totalCopiesCount}
                 {formatPhase === "assign" ? ` · ${selectedInCurrentViewCount} selezionate nella vista corrente` : ""}
               </p>
             </div>
@@ -1815,6 +1850,19 @@ export function UploadForm({ formats, photographer, stripeEnabled }: UploadFormP
               <SummaryCard label="Da pagare ora" value={formatCurrency(paymentPlan.dueNowCents)} />
               <SummaryCard label="Saldo in studio" value={formatCurrency(paymentPlan.remainingCents)} />
             </div>
+
+            {pricingInsights.quantityDiscountCents > 0 && (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <SummaryCard
+                  label="Totale listino"
+                  value={formatCurrency(totalCents + pricingInsights.quantityDiscountCents)}
+                />
+                <SummaryCard
+                  label="Risparmio quantita"
+                  value={`-${formatCurrency(pricingInsights.quantityDiscountCents)}`}
+                />
+              </div>
+            )}
 
             {couponDiscountCents > 0 && (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -2034,14 +2082,14 @@ function LivePricingRibbon({
   totalDiscountCents,
   hasCouponPromo,
   hasQuantityPromo,
-  quantityPromoItems,
+  quantityPromoFormats,
 }: {
   totalCents: number;
   promotionsCount: number;
   totalDiscountCents: number;
   hasCouponPromo: boolean;
   hasQuantityPromo: boolean;
-  quantityPromoItems: number;
+  quantityPromoFormats: number;
 }) {
   return (
     <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
@@ -2068,7 +2116,7 @@ function LivePricingRibbon({
           )}
           {hasQuantityPromo && (
             <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-              Sconto quantita su {quantityPromoItems} foto
+              Sconto quantita su {quantityPromoFormats} {quantityPromoFormats === 1 ? "formato" : "formati"}
             </span>
           )}
         </div>

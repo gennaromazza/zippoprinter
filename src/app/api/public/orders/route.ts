@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { registerCouponRedemption, validateCoupon, type CouponRecord } from "@/lib/coupons";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutAmounts, getPhotographerPaymentMode, prefersOnlinePayment, requiresOnlinePayment } from "@/lib/payments";
-import { getUnitPriceForQuantity } from "@/lib/pricing";
+import { computeFormatQuantityTotals, getUnitPriceForQuantity } from "@/lib/pricing";
 import { isMissingCouponSchemaError, isMissingPaymentSchemaError } from "@/lib/schema-compat";
 import { getConnectedStripeClientForTenant, getStripeClient } from "@/lib/stripe";
 import { canUseOnlinePayments, getTenantBillingContext } from "@/lib/tenant-billing";
@@ -235,6 +235,9 @@ export async function POST(request: Request) {
     const formats = (formatsData as PrintFormat[] | null) ?? [];
     const formatMap = new Map(formats.map((format) => [format.id, format]));
 
+    // Aggregate total quantities per format for tier-based pricing.
+    const formatQuantityTotals = computeFormatQuantityTotals(manifest);
+
     const lineItems = manifest.map((item) => {
       const format = formatMap.get(item.formatId);
       const safeQuantity = toSafeQuantity(Number(item.quantity));
@@ -246,7 +249,8 @@ export async function POST(request: Request) {
         throw new Error("Quantita non valida: ogni foto deve avere una quantita tra 1 e 10.");
       }
 
-      const unitPriceCents = getUnitPriceForQuantity(format, safeQuantity);
+      const aggregateQty = formatQuantityTotals.get(item.formatId) || safeQuantity;
+      const unitPriceCents = getUnitPriceForQuantity(format, aggregateQty);
 
       return {
         ...item,

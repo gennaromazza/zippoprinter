@@ -32,15 +32,29 @@ export function parseQuantityPriceTiers(raw: unknown): QuantityPriceTier[] {
       const candidate = item as Partial<QuantityPriceTier>;
       const minQuantity = toPositiveInteger(candidate.min_quantity);
       const unitPriceCents = toPositiveInteger(candidate.unit_price_cents);
+      const rawMode = candidate.discount_mode;
+      const parsedMode = rawMode === "fixed" || rawMode === "percent" ? rawMode : undefined;
+      const rawDiscountValue = Number(candidate.discount_value);
+      const parsedDiscountValue =
+        Number.isFinite(rawDiscountValue) && rawDiscountValue > 0 ? roundToTwo(rawDiscountValue) : undefined;
 
       if (!minQuantity || !unitPriceCents) {
         return null;
       }
 
-      return {
+      const parsedTier: QuantityPriceTier = {
         min_quantity: minQuantity,
         unit_price_cents: unitPriceCents,
       };
+
+      if (parsedMode) {
+        parsedTier.discount_mode = parsedMode;
+      }
+      if (parsedDiscountValue !== undefined) {
+        parsedTier.discount_value = parsedDiscountValue;
+      }
+
+      return parsedTier;
     })
     .filter((item): item is QuantityPriceTier => Boolean(item))
     .sort((a, b) => a.min_quantity - b.min_quantity);
@@ -61,6 +75,24 @@ export function getUnitPriceForQuantity(
   }
 
   return unitPrice;
+}
+
+/**
+ * Aggregate total quantities per format id from an array of line items.
+ * Used to determine the correct quantity-based pricing tier:
+ * discount thresholds apply to the **total** copies of each format
+ * across all photos, not per individual photo.
+ */
+export function computeFormatQuantityTotals(
+  items: ReadonlyArray<{ formatId: string; quantity: number }>
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    if (!item.formatId) continue;
+    const current = totals.get(item.formatId) || 0;
+    totals.set(item.formatId, current + Math.max(1, Math.round(item.quantity)));
+  }
+  return totals;
 }
 
 export function parseTierInput(raw: string): QuantityPriceTier[] {
@@ -123,6 +155,14 @@ export function tiersToDiscountRules(
   }
 
   return parsed.map((tier) => {
+    if (tier.discount_mode && Number.isFinite(tier.discount_value) && (tier.discount_value || 0) > 0) {
+      return {
+        min_quantity: tier.min_quantity,
+        mode: tier.discount_mode,
+        value: roundToTwo(Number(tier.discount_value)),
+      };
+    }
+
     const discountCents = Math.max(basePriceCents - tier.unit_price_cents, 0);
     return {
       min_quantity: tier.min_quantity,
@@ -182,6 +222,8 @@ export function discountRulesToTiers(
     tiers.push({
       min_quantity: minQuantity,
       unit_price_cents: finalUnitPriceCents,
+      discount_mode: mode,
+      discount_value: roundToTwo(value),
     });
   }
 
