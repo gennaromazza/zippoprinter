@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 interface SetupStep {
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
   try {
     const adminEmail =
-      (process.env.INIT_ADMIN_EMAIL || "admin@studiofotograficozippoprinter.com").trim();
+      (process.env.INIT_ADMIN_EMAIL || "admin@studiofotograficostampiss.com").trim();
     const adminPassword = (process.env.INIT_ADMIN_PASSWORD || "").trim();
 
     if (!adminPassword) {

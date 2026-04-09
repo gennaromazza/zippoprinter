@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Owner Support V2
+﻿-- =============================================
+-- STAMPISS - Owner Support V2
 -- Password recovery + studio access status controls
 -- =============================================
 

@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { LegalPageShell } from "@/components/legal-page-shell";
 import { MarketingShell } from "@/components/marketing-shell";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/privacy-consent";
 
 export const metadata: Metadata = {
-  title: "Termini di Servizio | ZippoPrinter",
-  description: "Termini e condizioni di utilizzo della piattaforma ZippoPrinter.",
+  title: "Termini di Servizio | Stampiss",
+  description: "Termini e condizioni di utilizzo della piattaforma Stampiss.",
 };
 
 export default function TermsPage() {
@@ -13,13 +13,13 @@ export default function TermsPage() {
     <MarketingShell>
       <LegalPageShell
         title="Termini di Servizio"
-        summary="Questi termini disciplinano l'accesso e l'uso della piattaforma ZippoPrinter da parte degli studi fotografici."
+        summary="Questi termini disciplinano l'accesso e l'uso della piattaforma Stampiss da parte degli studi fotografici."
         lastUpdated={LEGAL_DOCUMENT_VERSION}
       >
         <section>
           <h2 className="text-lg font-semibold">1. Oggetto del servizio</h2>
           <p className="mt-2 text-muted-foreground">
-            ZippoPrinter fornisce strumenti software per raccolta ordini foto, gestione workflow, pagamenti
+            Stampiss fornisce strumenti software per raccolta ordini foto, gestione workflow, pagamenti
             e operazioni amministrative per studi fotografici.
           </p>
         </section>

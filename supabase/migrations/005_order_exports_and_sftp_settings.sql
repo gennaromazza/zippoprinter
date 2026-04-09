@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Massive order exports and SFTP settings
+﻿-- =============================================
+-- STAMPISS - Massive order exports and SFTP settings
 -- =============================================
 
 ALTER TABLE photographers

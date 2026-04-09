@@ -1,4 +1,4 @@
-import Image from "next/image";
+﻿import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, SearchX } from "lucide-react";
 
@@ -8,7 +8,7 @@ export default function NotFound() {
       <div className="mx-auto max-w-lg text-center">
         <Image
           src="/logo.png"
-          alt="ZippoPrinter"
+          alt="Stampiss"
           width={48}
           height={48}
           className="mx-auto mb-6"

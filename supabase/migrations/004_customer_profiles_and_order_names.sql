@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Customer profiles and separate order names
+﻿-- =============================================
+-- STAMPISS - Customer profiles and separate order names
 -- =============================================
 
 ALTER TABLE customers

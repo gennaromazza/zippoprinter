@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import type Stripe from "stripe";
 import type {
@@ -28,7 +28,7 @@ function getStripeLookupKey(plan: SubscriptionPlan) {
     typeof metadata.stripe_price_lookup_key === "string"
       ? metadata.stripe_price_lookup_key.trim()
       : "";
-  return raw || `zippoprinter_plan_${plan.code}`;
+  return raw || `stampiss_plan_${plan.code}`;
 }
 
 function isStripeResourceMissingError(error: unknown) {

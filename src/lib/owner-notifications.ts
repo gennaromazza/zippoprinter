@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeProcessAuditEvent } from "@/lib/process-audit";
@@ -100,7 +100,7 @@ export async function notifyOwnerAction(input: OwnerActionNotificationInput) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
       <div style="border-bottom:2px solid #e5e7eb;padding-bottom:12px;margin-bottom:16px;">
-        <strong style="font-size:14px;color:#6b7280;">ZippoPrinter Platform</strong>
+        <strong style="font-size:14px;color:#6b7280;">Stampiss Platform</strong>
       </div>
       ${template.body}
       <p style="margin-top:20px;font-size:13px;color:#9ca3af;">

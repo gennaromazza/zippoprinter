@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Quantity pricing tiers for print formats
+﻿-- =============================================
+-- STAMPISS - Quantity pricing tiers for print formats
 -- =============================================
 
 ALTER TABLE print_formats

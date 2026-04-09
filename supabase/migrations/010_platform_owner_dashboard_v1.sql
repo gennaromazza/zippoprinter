@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Platform Owner Dashboard V1
+﻿-- =============================================
+-- STAMPISS - Platform Owner Dashboard V1
 -- =============================================
 
 CREATE TABLE IF NOT EXISTS platform_admins (

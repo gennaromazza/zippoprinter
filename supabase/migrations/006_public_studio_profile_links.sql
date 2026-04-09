@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Public studio profile links
+﻿-- =============================================
+-- STAMPISS - Public studio profile links
 -- =============================================
 
 ALTER TABLE photographers

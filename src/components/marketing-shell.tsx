@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
@@ -30,8 +30,8 @@ export function MarketingHeader() {
     <header className="sticky top-0 z-50 w-full border-b border-white/60 bg-[rgba(250,248,245,0.82)] backdrop-blur-lg">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-8">
         <Link href="/" className="flex items-center gap-2.5">
-          <Image src="/logo.png" alt="ZippoPrinter" width={36} height={36} className="h-9 w-9" />
-          <span className="text-lg font-bold tracking-tight">ZippoPrinter</span>
+          <Image src="/logo.png" alt="Stampiss" width={36} height={36} className="h-9 w-9" />
+          <span className="text-lg font-bold tracking-tight">Stampiss</span>
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
@@ -126,7 +126,7 @@ export function MarketingHeader() {
 
 export function MarketingFooter() {
   const openCookiePreferences = () => {
-    window.dispatchEvent(new Event("zippoprinter:open-cookie-preferences"));
+    window.dispatchEvent(new Event("stampiss:open-cookie-preferences"));
   };
 
   return (
@@ -135,8 +135,8 @@ export function MarketingFooter() {
         <div className="grid gap-8 md:grid-cols-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <Image src="/logo.png" alt="ZippoPrinter" width={36} height={36} className="h-9 w-9" />
-              <span className="text-lg font-bold tracking-tight">ZippoPrinter</span>
+              <Image src="/logo.png" alt="Stampiss" width={36} height={36} className="h-9 w-9" />
+              <span className="text-lg font-bold tracking-tight">Stampiss</span>
             </div>
             <p className="mt-3 max-w-xs text-sm leading-6 text-muted-foreground">
               La piattaforma SaaS per studi fotografici che vogliono ricevere ordini di stampa online in modo professionale.
@@ -218,7 +218,7 @@ export function MarketingFooter() {
         </div>
 
         <div className="mt-10 border-t border-white/60 pt-6 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} ZippoPrinter. Tutti i diritti riservati.
+          © {new Date().getFullYear()} Stampiss. Tutti i diritti riservati.
         </div>
       </div>
     </footer>

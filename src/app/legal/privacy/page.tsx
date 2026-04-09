@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { LegalPageShell } from "@/components/legal-page-shell";
 import { MarketingShell } from "@/components/marketing-shell";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/privacy-consent";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | ZippoPrinter",
-  description: "Informativa privacy per la piattaforma ZippoPrinter.",
+  title: "Privacy Policy | Stampiss",
+  description: "Informativa privacy per la piattaforma Stampiss.",
 };
 
 export default function PrivacyPolicyPage() {
@@ -13,13 +13,13 @@ export default function PrivacyPolicyPage() {
     <MarketingShell>
       <LegalPageShell
         title="Privacy Policy"
-        summary="Questa informativa descrive quali dati personali vengono trattati da ZippoPrinter, per quali finalita e con quali tempi di conservazione."
+        summary="Questa informativa descrive quali dati personali vengono trattati da Stampiss, per quali finalita e con quali tempi di conservazione."
         lastUpdated={LEGAL_DOCUMENT_VERSION}
       >
         <section>
           <h2 className="text-lg font-semibold">1. Titolare del trattamento</h2>
           <p className="mt-2 text-muted-foreground">
-            Titolare: ZippoPrinter.
+            Titolare: Stampiss.
           </p>
         </section>
 

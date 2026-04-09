@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -186,7 +186,7 @@ export default function SignupPage() {
         {/* Right panel - signup form */}
         <Card className="glass-panel border-white/40 bg-[rgba(255,253,249,0.88)]">
           <CardHeader className="text-center">
-            <Image src="/logo.png" alt="ZippoPrinter" width={64} height={64} className="mx-auto mb-4 h-16 w-16" />
+            <Image src="/logo.png" alt="Stampiss" width={64} height={64} className="mx-auto mb-4 h-16 w-16" />
             <CardTitle>Crea il tuo account</CardTitle>
             <CardDescription>
               Registra il tuo studio fotografico e inizia la prova gratuita.

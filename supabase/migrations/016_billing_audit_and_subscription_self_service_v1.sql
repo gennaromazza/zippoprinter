@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Billing self-service + Owner controls + Process Audit v1
+﻿-- =============================================
+-- STAMPISS - Billing self-service + Owner controls + Process Audit v1
 -- =============================================
 
 -- ---------------------------------------------

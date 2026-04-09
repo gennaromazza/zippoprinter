@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import Stripe from "stripe";
@@ -25,7 +25,7 @@ for (const key of requiredEnv) {
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   appInfo: {
-    name: "ZippoPrinter Reset Connect Test",
+    name: "Stampiss Reset Connect Test",
   },
 });
 

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -58,13 +58,13 @@ export function AdminShell({
       <div className="flex items-center gap-3 px-6 pb-2 pt-6">
         <Image
           src="/logo.png"
-          alt="ZippoPrinter"
+          alt="Stampiss"
           width={38}
           height={38}
           className="shrink-0"
         />
         <span className="text-lg font-bold tracking-tight text-foreground">
-          ZippoPrinter
+          Stampiss
         </span>
       </div>
 
@@ -177,9 +177,9 @@ export function AdminShell({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Image src="/logo.png" alt="ZippoPrinter" width={28} height={28} />
+          <Image src="/logo.png" alt="Stampiss" width={28} height={28} />
           <span className="text-sm font-bold tracking-tight text-foreground">
-            ZippoPrinter
+            Stampiss
           </span>
         </header>
 

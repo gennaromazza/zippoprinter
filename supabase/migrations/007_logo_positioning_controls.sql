@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Logo positioning controls
+﻿-- =============================================
+-- STAMPISS - Logo positioning controls
 -- =============================================
 
 ALTER TABLE photographers

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -14,7 +14,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[ZippoPrinter] Unhandled error:", error);
+    console.error("[Stampiss] Unhandled error:", error);
   }, [error]);
 
   return (
@@ -22,7 +22,7 @@ export default function GlobalError({
       <div className="mx-auto max-w-lg text-center">
         <Image
           src="/logo.png"
-          alt="ZippoPrinter"
+          alt="Stampiss"
           width={48}
           height={48}
           className="mx-auto mb-6"

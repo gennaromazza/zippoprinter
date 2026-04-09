@@ -1,4 +1,4 @@
-# ZippoPrinter Docs (AI-Ready)
+﻿# Stampiss Docs (AI-Ready)
 
 This folder is the single source of truth for architecture, operations, and product-critical invariants.
 

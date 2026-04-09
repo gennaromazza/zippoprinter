@@ -1,6 +1,6 @@
-# ZippoPrinter
+﻿# Stampiss
 
-ZippoPrinter e una web app per studi fotografici che raccoglie ordini di stampa online e li organizza in un pannello amministrativo semplice da usare.
+Stampiss e una web app per studi fotografici che raccoglie ordini di stampa online e li organizza in un pannello amministrativo semplice da usare.
 
 ## Cosa fa
 
@@ -58,7 +58,7 @@ Apri `http://localhost:3000`.
 
 ## Configurazione
 
-La configurazione database iniziale e documentata in [SETUP_GUIDE.md](/D:/ZippoProject/zippoprinter/SETUP_GUIDE.md).
+La configurazione database iniziale e documentata in [SETUP_GUIDE.md](/D:/ZippoProject/stampiss/SETUP_GUIDE.md).
 
 Assicurati di avere:
 
@@ -71,10 +71,10 @@ Assicurati di avere:
 
 Produzione attuale:
 
-- GitHub: `https://github.com/gennaromazza/zippoprinter`
-- Vercel project: `studiofotograficozippo-5593s-projects / zippoprinter`
-- Dominio: `https://studiofotograficozippoprinter.com`
-- Alias: `https://zippoprinter.vercel.app`
+- GitHub: `https://github.com/gennaromazza/stampiss`
+- Vercel project: `studiofotograficozippo-5593s-projects / stampiss`
+- Dominio: `https://studiofotograficostampiss.com`
+- Alias: `https://stampiss.vercel.app`
 
 Impostazioni Vercel corrette:
 
@@ -100,7 +100,7 @@ Variabili ambiente richieste:
 - `STRIPE_WEBHOOK_SECRET` se si usa checkout online
 - `STRIPE_PLATFORM_WEBHOOK_SECRET` per webhook subscription SaaS (piattaforma)
 - `RESEND_API_KEY` per notifiche email transazionali SaaS
-- `RESEND_FROM_EMAIL` mittente notifiche (es. `ZippoPrinter <billing@tuodominio.it>`)
+- `RESEND_FROM_EMAIL` mittente notifiche (es. `Stampiss <billing@tuodominio.it>`)
 - `ENABLE_LEGACY_STRIPE_FALLBACK` (`true` durante migrazione Connect, poi `false`)
 - `VERCEL_API_TOKEN` per gestione custom domain BYOD
 - `VERCEL_PROJECT_ID` project id Vercel del deployment
@@ -136,15 +136,15 @@ Nota sicurezza:
 Procedura rapida:
 
 ```bash
-cd C:/Users/targa/Downloads/zippoprinter
+cd C:/Users/targa/Downloads/stampiss
 git push origin main
 npm run deploy:prod:safe
 ```
 
 Nota importante:
 
-- eseguire i comandi dalla cartella `C:/Users/targa/Downloads/zippoprinter`
-- usare sempre `npm run deploy:prod:safe`: lo script blocca automaticamente deploy su progetto/team errati e verifica alias finale `https://zippoprinter.vercel.app`
+- eseguire i comandi dalla cartella `C:/Users/targa/Downloads/stampiss`
+- usare sempre `npm run deploy:prod:safe`: lo script blocca automaticamente deploy su progetto/team errati e verifica alias finale `https://stampiss.vercel.app`
 - per sola verifica target senza deploy: `npm run deploy:prod:check`
 
 Migrazioni Supabase da avere allineate:

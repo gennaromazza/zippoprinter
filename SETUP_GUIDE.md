@@ -1,4 +1,4 @@
-# Guida Setup ZippoPrinter - Database
+﻿# Guida Setup Stampiss - Database
 
 ## Passaggio 1: Esegui la migrazione su Supabase
 
@@ -18,7 +18,7 @@ Dopo aver eseguito la migrazione, esegui questa query SQL per creare l'utente am
 INSERT INTO auth.users (instance_id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, confirmation_token, email_change_token_new, aud)
 VALUES (
   '00000000-0000-0000-0000-000000000000',
-  'admin@studiofotograficozippoprinter.com',
+  'admin@studiofotograficostampiss.com',
   crypt('TuaPasswordSicura123!', gen_salt('bf')),
   NOW(),
   '{"provider":"email","providers":["email"]}',
@@ -37,8 +37,8 @@ DECLARE
   photographer_uuid UUID;
   auth_uuid UUID;
 BEGIN
-  SELECT id INTO photographer_uuid FROM photographers WHERE email = 'admin@studiofotograficozippoprinter.com';
-  SELECT id INTO auth_uuid FROM auth.users WHERE email = 'admin@studiofotograficozippoprinter.com';
+  SELECT id INTO photographer_uuid FROM photographers WHERE email = 'admin@studiofotograficostampiss.com';
+  SELECT id INTO auth_uuid FROM auth.users WHERE email = 'admin@studiofotograficostampiss.com';
   
   RAISE NOTICE 'Photographer ID: %', photographer_uuid;
   RAISE NOTICE 'Auth User ID: %', auth_uuid;
@@ -73,7 +73,7 @@ CREATE POLICY "Admin can delete photos" ON storage.objects
 
 ## Credenziali di Accesso
 
-- **Email**: admin@studiofotograficozippoprinter.com
+- **Email**: admin@studiofotograficostampiss.com
 - **Password**: La password che hai impostato nel Passaggio 2
 
 ## Variabili Ambiente Setup
@@ -82,7 +82,7 @@ Per usare il setup automatico via `/setup` o `/api/setup` imposta:
 
 - `INIT_SECRET` (obbligatoria): segreto richiesto per diagnostica e setup
 - `INIT_ADMIN_PASSWORD` (obbligatoria): password admin iniziale
-- `INIT_ADMIN_EMAIL` (opzionale): email admin iniziale (default `admin@studiofotograficozippoprinter.com`)
+- `INIT_ADMIN_EMAIL` (opzionale): email admin iniziale (default `admin@studiofotograficostampiss.com`)
 - `ENABLE_SETUP_ENDPOINTS` (opzionale): impostare `true` per abilitare gli endpoint in produzione
 - `NEXT_PUBLIC_ENABLE_SETUP` (opzionale): impostare `true` per mostrare la pagina `/setup`
 - `ENABLE_LEGACY_STRIPE_FALLBACK` (opzionale): fallback temporaneo checkout legacy
@@ -92,7 +92,7 @@ Per usare il setup automatico via `/setup` o `/api/setup` imposta:
 ## Verifica Setup
 
 Dopo aver completato tutti i passaggi, visita:
-`https://studiofotograficozippoprinter.com/api/diagnostic?secret=YOUR_INIT_SECRET`
+`https://studiofotograficostampiss.com/api/diagnostic?secret=YOUR_INIT_SECRET`
 
 Allinea anche la migrazione SaaS:
 - `supabase/migrations/009_saas_multitenant_foundation_v2.sql`

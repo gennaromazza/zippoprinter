@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - GDPR privacy consents v1
+﻿-- =============================================
+-- STAMPISS - GDPR privacy consents v1
 -- =============================================
 
 CREATE TABLE IF NOT EXISTS privacy_consents (

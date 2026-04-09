@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+﻿import { headers } from "next/headers";
 import { StorefrontPage } from "@/components/storefront-page";
 import { LandingPage } from "@/components/landing-page";
 import { MarketingShell } from "@/components/marketing-shell";
@@ -8,7 +8,7 @@ import { resolveTenantByHost } from "@/lib/tenant-domains";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "ZippoPrinter | Ordini di stampa online per studi fotografici",
+  title: "Stampiss | Ordini di stampa online per studi fotografici",
   description:
     "La piattaforma SaaS per studi fotografici: vetrina white-label, gestione ordini, pagamenti online, dominio personalizzato. Prova gratis 14 giorni.",
 };

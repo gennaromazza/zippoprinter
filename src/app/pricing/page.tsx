@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import {
   Check,
   ArrowRight,
@@ -9,9 +9,9 @@ import {
 import { MarketingShell } from "@/components/marketing-shell";
 
 export const metadata = {
-  title: "Prezzi e Piani | ZippoPrinter",
+  title: "Prezzi e Piani | Stampiss",
   description:
-    "Scegli il piano ZippoPrinter ideale per il tuo studio fotografico. A partire da €6/mese con 14 giorni di prova gratuita.",
+    "Scegli il piano Stampiss ideale per il tuo studio fotografico. A partire da €6/mese con 14 giorni di prova gratuita.",
 };
 
 const features = [
@@ -38,7 +38,7 @@ const faqs = [
   },
   {
     q: "Come funzionano i pagamenti dei miei clienti?",
-    a: "I pagamenti dei tuoi clienti vengono gestiti tramite il tuo account Stripe Connect. I fondi vanno direttamente a te, ZippoPrinter non trattiene commissioni sugli ordini.",
+    a: "I pagamenti dei tuoi clienti vengono gestiti tramite il tuo account Stripe Connect. I fondi vanno direttamente a te, Stampiss non trattiene commissioni sugli ordini.",
   },
   {
     q: "Posso cancellare in qualsiasi momento?",

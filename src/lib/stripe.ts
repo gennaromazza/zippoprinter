@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import Stripe from "stripe";
 import type { TenantBillingAccount } from "@/lib/types";
@@ -35,7 +35,7 @@ export function getStripeClient() {
 
   stripeClient = new Stripe(stripeSecretKey, {
     appInfo: {
-      name: "ZippoPrinter",
+      name: "Stampiss",
     },
   });
   stripeClientKey = stripeSecretKey;
@@ -69,7 +69,7 @@ export function getConnectedStripeClientForTenant(
 
   const scoped = new Stripe(stripeSecretKey, {
     appInfo: {
-      name: "ZippoPrinter",
+      name: "Stampiss",
     },
     stripeAccount: connectedAccountId,
   });
@@ -97,7 +97,7 @@ export function getConnectedStripeClientByAccountId(connectedAccountId: string |
 
   const scoped = new Stripe(stripeSecretKey, {
     appInfo: {
-      name: "ZippoPrinter",
+      name: "Stampiss",
     },
     stripeAccount: connectedAccountId,
   });

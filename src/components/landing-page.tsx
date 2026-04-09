@@ -1,4 +1,4 @@
-import Image from "next/image";
+﻿import Image from "next/image";
 import Link from "next/link";
 import {
   Upload,
@@ -20,7 +20,7 @@ export function LandingPage() {
       {/* ── Hero ───────────────────────────────────────────────────── */}
       <section className="px-4 pb-16 pt-12 md:px-8 md:pb-24 md:pt-20">
         <div className="mx-auto max-w-5xl text-center">
-          <Image src="/logo.png" alt="ZippoPrinter" width={72} height={72} className="mx-auto mb-8 h-[72px] w-[72px] drop-shadow-lg" />
+          <Image src="/logo.png" alt="Stampiss" width={72} height={72} className="mx-auto mb-8 h-[72px] w-[72px] drop-shadow-lg" />
           <p className="section-kicker mx-auto mb-6">
             <Sparkles className="h-3.5 w-3.5" />
             Per studi fotografici e laboratori di stampa
@@ -31,7 +31,7 @@ export function LandingPage() {
             professionale.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted-foreground md:text-xl">
-            ZippoPrinter è la piattaforma che ti permette di avere una vetrina
+            Stampiss è la piattaforma che ti permette di avere una vetrina
             personalizzata per raccogliere ordini di stampa fotografica dai tuoi
             clienti, con pagamenti integrati e gestione completa.
           </p>
@@ -198,7 +198,7 @@ export function LandingPage() {
               Pronto a digitalizzare il tuo studio?
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-              Unisciti agli studi fotografici che già usano ZippoPrinter per
+              Unisciti agli studi fotografici che già usano Stampiss per
               ricevere ordini di stampa online.
             </p>
             <Link

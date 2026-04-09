@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -116,7 +116,7 @@ export default function SetupPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <header className="glass-panel rounded-[2rem] px-6 py-6 md:px-8">
           <p className="section-kicker mb-3">Setup tecnico</p>
-          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Configurazione ZippoPrinter</h1>
+          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Configurazione Stampiss</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
             Verifica database, bucket storage e utente amministratore. Questa pagina resta una
             utility tecnica e non fa parte del funnel prodotto.

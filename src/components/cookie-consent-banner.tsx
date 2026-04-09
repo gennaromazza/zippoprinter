@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -143,10 +143,10 @@ export function CookieConsentBanner() {
       setCanReopen(true);
     };
 
-    window.addEventListener("zippoprinter:open-cookie-preferences", onOpenPreferences);
+    window.addEventListener("stampiss:open-cookie-preferences", onOpenPreferences);
     return () => {
       window.clearTimeout(initTimer);
-      window.removeEventListener("zippoprinter:open-cookie-preferences", onOpenPreferences);
+      window.removeEventListener("stampiss:open-cookie-preferences", onOpenPreferences);
     };
   }, []);
 
@@ -168,7 +168,7 @@ export function CookieConsentBanner() {
     setCanReopen(true);
 
     window.dispatchEvent(
-      new CustomEvent("zippoprinter:cookie-consent-updated", {
+      new CustomEvent("stampiss:cookie-consent-updated", {
         detail: value,
       })
     );
@@ -188,7 +188,7 @@ export function CookieConsentBanner() {
           variant="outline"
           className="bg-white/95 backdrop-blur"
           onClick={() => {
-            window.dispatchEvent(new Event("zippoprinter:open-cookie-preferences"));
+            window.dispatchEvent(new Event("stampiss:open-cookie-preferences"));
           }}
         >
           Preferenze cookie

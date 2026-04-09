@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -279,7 +279,7 @@ export default function OnboardingPage() {
         {/* ── Step: Studio ─────────────────────────────────────────── */}
         {step === "studio" && (
           <div className="glass-panel rounded-[2rem] p-8 md:p-10">
-            <Image src="/logo.png" alt="ZippoPrinter" width={48} height={48} className="mb-2 h-12 w-12" />
+            <Image src="/logo.png" alt="Stampiss" width={48} height={48} className="mb-2 h-12 w-12" />
             <h1 className="mt-4 text-2xl font-bold tracking-tight md:text-3xl">
               Configura il tuo studio
             </h1>

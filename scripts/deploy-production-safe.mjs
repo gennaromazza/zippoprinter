@@ -1,12 +1,12 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 const EXPECTED_PROJECT_ID = "prj_xOeXEsDrfOETjY3yqQkd4mWy9G0S";
 const EXPECTED_ORG_ID = "team_ZsTOatWoVvn2ObU3m2ZbxY00";
-const EXPECTED_PROJECT_NAME = "zippoprinter";
-const REQUIRED_ALIAS = "zippoprinter.vercel.app";
+const EXPECTED_PROJECT_NAME = "stampiss";
+const REQUIRED_ALIAS = "stampiss.vercel.app";
 
 const CHECK_ONLY = process.argv.includes("--check-only");
 const SKIP_BUILD = process.argv.includes("--skip-build");

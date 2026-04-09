@@ -1,4 +1,4 @@
-export const LEGAL_DOCUMENT_VERSION = "2026-04-08";
+﻿export const LEGAL_DOCUMENT_VERSION = "2026-04-08";
 
 export const LEGAL_LINKS = {
   privacyPolicy: "/legal/privacy",
@@ -6,7 +6,7 @@ export const LEGAL_LINKS = {
   termsOfService: "/legal/terms",
 } as const;
 
-export const COOKIE_CONSENT_STORAGE_KEY = "zippoprinter.cookie-consent.v1";
+export const COOKIE_CONSENT_STORAGE_KEY = "stampiss.cookie-consent.v1";
 export const COOKIE_CONSENT_COOKIE_NAME = "zp_cookie_consent";
 
 export const PRIVACY_CONSENT_SOURCES = [

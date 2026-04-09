@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Multi-tenant hardening
+﻿-- =============================================
+-- STAMPISS - Multi-tenant hardening
 -- =============================================
 
 ALTER TABLE photographers

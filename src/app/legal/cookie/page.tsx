@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { LegalPageShell } from "@/components/legal-page-shell";
 import { MarketingShell } from "@/components/marketing-shell";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/privacy-consent";
 
 export const metadata: Metadata = {
-  title: "Cookie Policy | ZippoPrinter",
-  description: "Informativa sull'uso dei cookie nella piattaforma ZippoPrinter.",
+  title: "Cookie Policy | Stampiss",
+  description: "Informativa sull'uso dei cookie nella piattaforma Stampiss.",
 };
 
 export default function CookiePolicyPage() {
@@ -25,7 +25,7 @@ export default function CookiePolicyPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold">2. Categorie usate su ZippoPrinter</h2>
+          <h2 className="text-lg font-semibold">2. Categorie usate su Stampiss</h2>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
             <li>Necessari: autenticazione, sicurezza, continuita della sessione.</li>
             <li>Analytics (opzionali): misurazioni aggregate per migliorare il prodotto.</li>

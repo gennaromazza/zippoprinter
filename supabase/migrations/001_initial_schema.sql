@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Database Schema
+﻿-- =============================================
+-- STAMPISS - Database Schema
 -- =============================================
 
 -- Enable UUID and pgcrypto extensions
@@ -157,7 +157,7 @@ CREATE TRIGGER photographers_updated_at
 
 INSERT INTO photographers (email, password_hash, name, whatsapp_number)
 VALUES (
-  'admin@studiofotograficozippoprinter.com',
+  'admin@studiofotograficostampiss.com',
   crypt('_123_', gen_salt('bf')),
   'Studio Fotografico Zippo',
   NULL

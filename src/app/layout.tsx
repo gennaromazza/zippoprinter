@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { RecoveryHashRedirect } from "@/components/recovery-hash-redirect";
@@ -15,9 +15,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "ZippoPrinter | Ordini di stampa fotografica per studi e clienti",
+  title: "Stampiss | Ordini di stampa fotografica per studi e clienti",
   description:
-    "ZippoPrinter aiuta gli studi fotografici a raccogliere, gestire e preparare ordini di stampa in modo semplice e professionale.",
+    "Stampiss aiuta gli studi fotografici a raccogliere, gestire e preparare ordini di stampa in modo semplice e professionale.",
   icons: {
     icon: "/logo.png",
     apple: "/logo.png",

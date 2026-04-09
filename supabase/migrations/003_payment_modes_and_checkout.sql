@@ -1,5 +1,5 @@
--- =============================================
--- ZIPPOPRINTER - Payment modes and checkout
+﻿-- =============================================
+-- STAMPISS - Payment modes and checkout
 -- =============================================
 
 ALTER TABLE photographers
