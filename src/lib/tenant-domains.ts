@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { TenantDomain } from "@/lib/types";
 
 function normalizeDomain(input: string) {
-  return input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  return input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.$/, "");
 }
 
 export function isValidDomain(input: string) {

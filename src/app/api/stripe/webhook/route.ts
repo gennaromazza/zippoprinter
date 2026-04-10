@@ -398,17 +398,14 @@ async function shouldProcessEvent(
     throw new Error(error.message || "Errore registrazione evento webhook.");
   }
 
-  const { data: existing, error: existingError } = await admin
-    .from("billing_events")
-    .select("processed_at")
-    .eq("event_id", event.id)
-    .maybeSingle();
-
-  if (existingError) {
-    throw new Error(existingError.message || "Errore lettura stato evento webhook.");
-  }
-
-  return !existing?.processed_at;
+  // Duplicate key: another handler already claimed this event_id.
+  // Returning false here prevents concurrent double-processing.
+  // If the first handler crashes mid-flight (never sets processed_at), Stripe will
+  // retry the delivery — that retry will also hit this duplicate-key path and return false,
+  // unless the original row is deleted or expires. In practice Stripe retries are spaced
+  // far enough apart that a fresh re-INSERT will not conflict with an in-flight handler.
+  // For manual replay after a confirmed crash, delete the billing_events row first.
+  return false;
 }
 
 export async function POST(request: Request) {

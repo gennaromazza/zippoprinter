@@ -1,4 +1,4 @@
-﻿# Guida Setup Stampiss - Database
+# Guida Setup Stampiss - Database
 
 ## Passaggio 1: Esegui la migrazione su Supabase
 

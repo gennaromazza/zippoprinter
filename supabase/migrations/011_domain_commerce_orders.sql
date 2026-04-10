@@ -1,4 +1,4 @@
-﻿-- STAMPISS - Domain commerce orders (Openprovider phase 2)
+-- STAMPISS - Domain commerce orders (Openprovider phase 2)
 
 CREATE TABLE IF NOT EXISTS domain_purchase_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

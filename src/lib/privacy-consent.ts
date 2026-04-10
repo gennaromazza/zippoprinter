@@ -1,4 +1,4 @@
-﻿export const LEGAL_DOCUMENT_VERSION = "2026-04-08";
+export const LEGAL_DOCUMENT_VERSION = "2026-04-08";
 
 export const LEGAL_LINKS = {
   privacyPolicy: "/legal/privacy",

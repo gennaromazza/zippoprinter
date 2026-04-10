@@ -47,6 +47,16 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/heif",
 ]);
 
+// Extension is derived from the validated MIME type — never from the filename — to prevent
+// path injection (e.g. an attacker uploading a file named "shell.php").
+const MIME_TO_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
 function hasPathTraversal(value: string) {
   return value.includes("..");
 }
@@ -482,7 +492,7 @@ export async function POST(request: Request) {
           throw new Error("Una o piu immagini superano i limiti consentiti.");
         }
 
-        const extension = fileEntry.name.split(".").pop() || "jpg";
+        const extension = MIME_TO_EXT[fileEntry.type] ?? "jpg";
         const safeBase = normalizeFilename(fileEntry.name.replace(/\.[^.]+$/, "")) || item.clientId;
         const fileName = `${Date.now()}-${item.clientId}-${safeBase}.${extension}`;
         storagePath = `${photographerId}/${createdOrder.id}/${fileName}`;
@@ -665,12 +675,24 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    // Best-effort cleanup: remove uploaded files and the orphaned order.
+    // Errors here are silently ignored so the original error is preserved.
     if (uploadedStoragePaths.length > 0) {
-      await createAdminClient().storage.from("photos").remove(uploadedStoragePaths);
+      try {
+        await createAdminClient().storage.from("photos").remove(uploadedStoragePaths);
+      } catch {
+        // ignore cleanup failure
+      }
     }
 
     if (createdOrderId) {
-      await createAdminClient().from("orders").delete().eq("id", createdOrderId);
+      try {
+        const cleanupClient = createAdminClient();
+        await cleanupClient.from("order_items").delete().eq("order_id", createdOrderId);
+        await cleanupClient.from("orders").delete().eq("id", createdOrderId);
+      } catch {
+        // ignore cleanup failure
+      }
     }
 
     return NextResponse.json(

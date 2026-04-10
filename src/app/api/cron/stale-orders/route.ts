@@ -11,13 +11,10 @@ const MAX_BATCH_SIZE = 200;
 function isAuthorizedCronRequest(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
-  const cronHeader = request.headers.get("x-vercel-cron");
 
+  // Only accept requests with a valid CRON_SECRET bearer token.
+  // The x-vercel-cron header alone is NOT sufficient because any caller can set it.
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-    return true;
-  }
-
-  if (cronHeader) {
     return true;
   }
 

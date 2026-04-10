@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { LegalPageShell } from "@/components/legal-page-shell";
 import { MarketingShell } from "@/components/marketing-shell";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/privacy-consent";

@@ -1,4 +1,4 @@
-﻿-- STAMPISS - Storefront branding v1 (preset + background + theme)
+-- STAMPISS - Storefront branding v1 (preset + background + theme)
 
 ALTER TABLE photographers
   ADD COLUMN IF NOT EXISTS storefront_theme_enabled BOOLEAN NOT NULL DEFAULT false,

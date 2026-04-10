@@ -30,7 +30,7 @@ export async function resetTenantTrial(input: {
   days?: number;
 }) {
   const admin = createAdminClient();
-  const days = Math.max(1, Math.min(input.days || 14, 30));
+  const days = Math.max(1, Math.min(input.days || 7, 14));
   const now = new Date();
   const trialEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 

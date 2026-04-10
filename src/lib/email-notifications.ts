@@ -185,12 +185,14 @@ export async function sendBillingNotification(input: NotificationInput) {
   const dayKey = new Date().toISOString().slice(0, 10);
   const idempotencyKey = `mail:${input.type}:${input.photographerId}:${input.idempotencySuffix || dayKey}`;
 
+  // Check both "succeeded" AND "running" to prevent duplicate sends during concurrent
+  // cron executions where neither has finished yet.
   const { data: existing } = await admin
     .from("billing_jobs")
     .select("id")
     .eq("job_type", "dunning")
     .eq("idempotency_key", idempotencyKey)
-    .eq("status", "succeeded")
+    .in("status", ["running", "succeeded"])
     .limit(1);
 
   if (existing && existing.length > 0) {

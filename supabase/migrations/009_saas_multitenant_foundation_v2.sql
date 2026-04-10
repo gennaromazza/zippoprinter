@@ -1,4 +1,4 @@
-﻿-- =============================================
+-- =============================================
 -- STAMPISS - SaaS multi-tenant foundation v2
 -- Stripe Connect + Subscriptions + Custom Domains
 -- =============================================

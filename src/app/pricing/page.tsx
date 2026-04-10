@@ -1,10 +1,11 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import {
   Check,
   ArrowRight,
   ShieldCheck,
   Sparkles,
   HelpCircle,
+  Clock,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing-shell";
 
@@ -14,17 +15,17 @@ export const metadata = {
     "Scegli il piano Stampiss ideale per il tuo studio fotografico. A partire da €6/mese con 14 giorni di prova gratuita.",
 };
 
-const features = [
-  "Vetrina white-label personalizzata",
-  "Caricamento foto e ordini illimitati",
-  "Gestione formati e pricing a scaglioni",
-  "Dashboard backoffice completa",
-  "Pagamenti online con Stripe",
-  "Dominio personalizzato incluso",
-  "Branding completo (colori, logo, layout)",
-  "Export ordini in ZIP per formato",
-  "Supporto deposito + saldo in studio",
-  "Certificato SSL automatico",
+const features: { label: string; comingSoon?: boolean }[] = [
+  { label: "Vetrina white-label personalizzata" },
+  { label: "Caricamento foto e ordini illimitati" },
+  { label: "Gestione formati e pricing a scaglioni" },
+  { label: "Dashboard backoffice completa" },
+  { label: "Pagamenti online con Stripe" },
+  { label: "Dominio personalizzato incluso", comingSoon: true },
+  { label: "Branding completo (colori, logo, layout)" },
+  { label: "Export ordini in ZIP per formato" },
+  { label: "Supporto deposito + saldo in studio" },
+  { label: "Certificato SSL automatico" },
 ];
 
 const faqs = [
@@ -151,26 +152,38 @@ export default function PricingPage() {
               <tbody>
                 {features.map((f, i) => (
                   <tr
-                    key={f}
+                    key={f.label}
                     className={
                       i < features.length - 1
                         ? "border-b border-white/60"
                         : ""
                     }
                   >
-                    <td className="px-6 py-3.5 text-foreground">{f}</td>
-                    <td className="px-4 py-3.5 text-center">
-                      <Check className="mx-auto h-4 w-4 text-[color:var(--success)]" aria-hidden="true" />
-                      <span className="sr-only">Incluso</span>
+                    <td className="px-6 py-3.5 text-foreground">
+                      {f.comingSoon ? (
+                        <span className="flex items-center gap-2">
+                          <span className="line-through text-muted-foreground">{f.label}</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            <Clock className="h-3 w-3" />
+                            In arrivo
+                          </span>
+                        </span>
+                      ) : f.label}
                     </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <Check className="mx-auto h-4 w-4 text-[color:var(--success)]" aria-hidden="true" />
-                      <span className="sr-only">Incluso</span>
-                    </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <Check className="mx-auto h-4 w-4 text-[color:var(--success)]" aria-hidden="true" />
-                      <span className="sr-only">Incluso</span>
-                    </td>
+                    {["Mensile", "Annuale", "Lifetime"].map((plan) => (
+                      <td key={plan} className="px-4 py-3.5 text-center">
+                        {f.comingSoon ? (
+                          <span className="inline-flex items-center justify-center gap-1 text-xs text-amber-600" aria-label="In arrivo">
+                            <Clock className="h-3.5 w-3.5" />
+                          </span>
+                        ) : (
+                          <>
+                            <Check className="mx-auto h-4 w-4 text-[color:var(--success)]" aria-hidden="true" />
+                            <span className="sr-only">Incluso</span>
+                          </>
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
                 <tr className="border-t border-white/70 bg-[rgba(248,243,238,0.4)]">
@@ -263,7 +276,7 @@ function PlanCard({
   period: string;
   billing: string;
   description: string;
-  features: string[];
+  features: { label: string; comingSoon?: boolean }[];
   highlighted?: boolean;
   badge?: string;
   cta: string;
@@ -304,9 +317,21 @@ function PlanCard({
 
       <ul className="mt-6 flex-1 space-y-2.5 border-t border-white/60 pt-6">
         {features.map((f) => (
-          <li key={f} className="flex items-start gap-2.5 text-sm">
-            <Check className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--success)]" />
-            <span>{f}</span>
+          <li key={f.label} className="flex items-start gap-2.5 text-sm">
+            {f.comingSoon ? (
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            ) : (
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--success)]" />
+            )}
+            <span className={f.comingSoon ? "text-muted-foreground" : ""}>
+              {f.comingSoon ? (
+                <>
+                  <span className="line-through">{f.label}</span>
+                  {" "}
+                  <span className="not-italic text-amber-600 no-underline">(In arrivo)</span>
+                </>
+              ) : f.label}
+            </span>
           </li>
         ))}
       </ul>

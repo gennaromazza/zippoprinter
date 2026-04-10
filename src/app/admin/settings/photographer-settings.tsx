@@ -172,6 +172,9 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
   const [stripeModalOpen, setStripeModalOpen] = useState(false);
   const [stripeEntryState, setStripeEntryState] = useState<"refresh" | "return" | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  // Tracks Stripe Connect ready state at the form level so the CTA banner can
+  // be hidden when Connect is already active. Updated by StripeConnectCard via callback.
+  const [formConnectReady, setFormConnectReady] = useState(false);
   const [depositType, setDepositType] = useState(photographer?.deposit_type || "percentage");
   const [depositValue, setDepositValue] = useState(
     formatInitialDepositValue(photographer?.deposit_type, photographer?.deposit_value)
@@ -1353,43 +1356,57 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
               </p>
             ) : null}
 
-            <div className="mt-4 rounded-[1.4rem] border border-primary/30 bg-primary/5 p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Vuoi ricevere pagamenti online? Configura Stripe.
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Collega Stripe Connect, chiudi la modale e poi conferma la modalita checkout cliente col pulsante dedicato.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            {/* Stripe Connect CTA — visible only when the payment mode requires Connect
+                and Connect is not yet active. Hidden automatically once onboarding
+                completes (StripeConnectCard calls onConnectReadyChange). */}
+            {(paymentMode === "online_full" || paymentMode === "deposit_plus_studio") && !formConnectReady ? (
+              <div className="mt-4 rounded-[1.4rem] border border-primary/30 bg-primary/5 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      Vuoi ricevere pagamenti online? Configura Stripe.
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Collega Stripe Connect, chiudi la modale e poi conferma la modalita checkout cliente col pulsante dedicato.
+                    </p>
+                  </div>
                   <Button type="button" onClick={handleOpenStripeSetup} className="md:shrink-0">
                     Configura Stripe
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      void handlePhotographerLogout();
-                    }}
-                    disabled={signingOut}
-                    className="md:shrink-0"
-                  >
-                    {signingOut ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Logout
-                      </>
-                    ) : (
-                      <>
-                        <LogOut className="h-4 w-4" />
-                        Logout fotografo
-                      </>
-                    )}
-                  </Button>
                 </div>
               </div>
+            ) : (paymentMode === "online_full" || paymentMode === "deposit_plus_studio") && formConnectReady ? (
+              <div className="mt-4 flex items-center gap-2 rounded-[1.4rem] border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <CreditCard className="h-4 w-4 shrink-0 text-emerald-700" />
+                <p className="text-sm font-semibold text-emerald-800">Stripe Connect attivo — pagamenti online abilitati.</p>
+                <Button type="button" variant="ghost" size="sm" onClick={handleOpenStripeSetup} className="ml-auto shrink-0 text-emerald-800 hover:text-emerald-900">
+                  Gestisci
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Logout — always accessible regardless of Stripe state */}
+            <div className="mt-2 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void handlePhotographerLogout();
+                }}
+                disabled={signingOut}
+              >
+                {signingOut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Logout
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-4 w-4" />
+                    Logout fotografo
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 
@@ -1449,6 +1466,7 @@ export function PhotographerSettings({ photographer }: { photographer: Photograp
             <StripeConnectCard
               entryState={stripeEntryState}
               onEntryStateHandled={() => setStripeEntryState(null)}
+              onConnectReadyChange={setFormConnectReady}
             />
           </div>
           <DialogFooter className="px-6 pb-6 md:px-8">

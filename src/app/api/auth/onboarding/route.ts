@@ -125,9 +125,9 @@ export async function POST(request: Request) {
     can_use_custom_domain: true,
   });
 
-  // Create trial subscription
+  // Create trial subscription (7 days)
   const trialEnd = new Date();
-  trialEnd.setDate(trialEnd.getDate() + 14);
+  trialEnd.setDate(trialEnd.getDate() + 7);
 
   await admin.from("tenant_subscriptions").insert({
     photographer_id: photographerId,

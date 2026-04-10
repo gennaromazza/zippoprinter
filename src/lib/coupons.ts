@@ -271,13 +271,20 @@ export async function registerCouponRedemption(input: {
   }
 
   const nextCount = (input.coupon.redemptions_count || 0) + 1;
-  const { error: couponUpdateError } = await input.admin
+  const { data: updatedRows, error: couponUpdateError } = await input.admin
     .from("coupons")
     .update({ redemptions_count: nextCount })
     .eq("id", input.coupon.id)
-    .eq("redemptions_count", input.coupon.redemptions_count);
+    .eq("redemptions_count", input.coupon.redemptions_count)
+    .select("id");
 
   if (couponUpdateError) {
     throw new Error(couponUpdateError.message || "Impossibile aggiornare il conteggio coupon.");
+  }
+
+  // 0 rows updated means another concurrent request already incremented the counter:
+  // the optimistic lock condition (.eq redemptions_count) no longer matched.
+  if (!updatedRows || updatedRows.length === 0) {
+    throw new Error("Coupon non disponibile: limite di utilizzi raggiunto o modifica concorrente rilevata.");
   }
 }

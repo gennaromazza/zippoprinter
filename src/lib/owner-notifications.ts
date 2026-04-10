@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeProcessAuditEvent } from "@/lib/process-audit";

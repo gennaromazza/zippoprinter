@@ -45,6 +45,8 @@ interface ConnectDisconnectResponse {
 interface StripeConnectCardProps {
   entryState?: "refresh" | "return" | null;
   onEntryStateHandled?: () => void;
+  /** Called whenever the connect-ready state changes (e.g. after onboarding completes). */
+  onConnectReadyChange?: (ready: boolean) => void;
 }
 
 const defaultStatusCard: StripeConnectStatusCardData = {
@@ -98,6 +100,7 @@ function getStatusToneClasses(tone: StripeConnectStatusCardData["tone"]) {
 export function StripeConnectCard({
   entryState = null,
   onEntryStateHandled,
+  onConnectReadyChange,
 }: StripeConnectCardProps) {
   const handledEntryStateRef = useRef(false);
   const onboardingPopupRef = useRef<Window | null>(null);
@@ -115,6 +118,13 @@ export function StripeConnectCard({
   const [statusCard, setStatusCard] = useState<StripeConnectStatusCardData>(defaultStatusCard);
   const [showConnectGuide, setShowConnectGuide] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+
+  // Notify parent whenever the connect-ready state settles after a load.
+  useEffect(() => {
+    if (!loading) {
+      onConnectReadyChange?.(connectReady);
+    }
+  }, [connectReady, loading, onConnectReadyChange]);
 
   const loadStatus = useCallback(async (options?: { successMessage?: string }) => {
     setSyncing(true);

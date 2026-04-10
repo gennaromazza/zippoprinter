@@ -57,7 +57,7 @@ export function SupportActionsCard({
   const [resetReason, setResetReason] = useState("");
   const [statusReason, setStatusReason] = useState("");
   const [trialReason, setTrialReason] = useState("");
-  const [trialDays, setTrialDays] = useState("14");
+  const [trialDays, setTrialDays] = useState("7");
   const [busyAction, setBusyAction] = useState<"reset" | "status" | "trial" | "reconcile" | null>(null);
   const [state, setState] = useState<ActionState | null>(null);
 
@@ -166,8 +166,8 @@ export function SupportActionsCard({
     }
 
     const days = Number(trialDays);
-    if (!Number.isFinite(days) || days < 1 || days > 30) {
-      setState({ kind: "error", message: "Inserisci un numero di giorni tra 1 e 30." });
+    if (!Number.isFinite(days) || days < 1 || days > 14) {
+      setState({ kind: "error", message: "Inserisci un numero di giorni tra 1 e 14." });
       return;
     }
 
@@ -205,7 +205,7 @@ export function SupportActionsCard({
         message: payload?.data?.message || "Trial resettato con successo.",
       });
       setTrialReason("");
-      setTrialDays("14");
+      setTrialDays("7");
       router.refresh();
     } catch {
       setState({ kind: "error", message: "Errore di rete durante il reset trial." });

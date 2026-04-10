@@ -26,6 +26,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ valid: false, error: "Dati coupon incompleti." }, { status: 400 });
     }
 
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (customerEmail && !EMAIL_REGEX.test(customerEmail)) {
+      return NextResponse.json({ valid: false, error: "Indirizzo email non valido." }, { status: 400 });
+    }
+
     const admin = createAdminClient();
     const { data: photographerData, error: photographerError } = await admin
       .from("photographers")

@@ -9,13 +9,10 @@ export const dynamic = "force-dynamic";
 function isAuthorizedCronRequest(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
-  const cronHeader = request.headers.get("x-vercel-cron");
 
+  // Only accept requests with a valid CRON_SECRET bearer token.
+  // The x-vercel-cron header alone is NOT sufficient because any caller can set it.
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-    return true;
-  }
-
-  if (cronHeader) {
     return true;
   }
 
@@ -97,6 +94,8 @@ export async function GET(request: Request) {
       idempotencySuffix: `trial_expired:${nowIso.slice(0, 10)}`,
     });
 
+    // Guard: only update if still trialing — a concurrent Stripe webhook may have
+    // already transitioned this subscription to active (e.g. last-minute payment).
     await admin
       .from("tenant_subscriptions")
       .update({
@@ -104,7 +103,8 @@ export async function GET(request: Request) {
         collection_state: "delinquent",
         updated_at: nowIso,
       })
-      .eq("photographer_id", row.photographer_id);
+      .eq("photographer_id", row.photographer_id)
+      .eq("status", "trialing");
 
     await writeProcessAuditEvent({
       actorType: "system",
@@ -131,6 +131,8 @@ export async function GET(request: Request) {
     .limit(500);
 
   for (const row of graceExpired || []) {
+    // Guard: only update if still past_due — a concurrent Stripe webhook may have
+    // already transitioned this subscription to active.
     await admin
       .from("tenant_subscriptions")
       .update({
@@ -138,7 +140,8 @@ export async function GET(request: Request) {
         collection_state: "delinquent",
         updated_at: nowIso,
       })
-      .eq("photographer_id", row.photographer_id);
+      .eq("photographer_id", row.photographer_id)
+      .eq("status", "past_due");
 
     await writeProcessAuditEvent({
       actorType: "system",

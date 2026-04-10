@@ -198,9 +198,12 @@ async function compressImageForUpload(file: File) {
 
   let quality = 0.9;
   let blob = await canvasToBlob(canvas, quality);
-  while (blob.size > PHOTO_TARGET_BYTES && quality > 0.45) {
+  let compressAttempts = 0;
+  const MAX_COMPRESS_ATTEMPTS = 6;
+  while (blob.size > PHOTO_TARGET_BYTES && quality > 0.45 && compressAttempts < MAX_COMPRESS_ATTEMPTS) {
     quality -= 0.1;
     blob = await canvasToBlob(canvas, quality);
+    compressAttempts++;
   }
 
   URL.revokeObjectURL(objectUrl);

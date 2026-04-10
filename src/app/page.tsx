@@ -1,4 +1,4 @@
-﻿import { headers } from "next/headers";
+import { headers } from "next/headers";
 import { StorefrontPage } from "@/components/storefront-page";
 import { LandingPage } from "@/components/landing-page";
 import { MarketingShell } from "@/components/marketing-shell";

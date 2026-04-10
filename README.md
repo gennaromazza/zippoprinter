@@ -1,4 +1,4 @@
-﻿# Stampiss
+# Stampiss
 
 Stampiss e una web app per studi fotografici che raccoglie ordini di stampa online e li organizza in un pannello amministrativo semplice da usare.
 
@@ -71,10 +71,10 @@ Assicurati di avere:
 
 Produzione attuale:
 
-- GitHub: `https://github.com/gennaromazza/stampiss`
-- Vercel project: `studiofotograficozippo-5593s-projects / stampiss`
-- Dominio: `https://studiofotograficostampiss.com`
-- Alias: `https://stampiss.vercel.app`
+- GitHub: `https://github.com/gennaromazza/zippoprinter`
+- Vercel project: `https://zippoprinter-git-main-studiofotograficozippo-5593s-projects.vercel.app/`
+- Dominio: `https://stampiss.com`
+- Alias: `https://zippoprinter-iwgoeck1w-studiofotograficozippo-5593s-projects.vercel.app/`
 
 Impostazioni Vercel corrette:
 
